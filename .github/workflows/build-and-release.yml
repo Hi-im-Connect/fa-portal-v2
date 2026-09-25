@@ -1,0 +1,218 @@
+name: Android Build
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  PORTAL_ARTIFACT_PREFIX: com.mobilerun.portal
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version-name: ${{ steps.version.outputs.VERSION_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION_NAME="${GITHUB_REF#refs/tags/v}"
+            VERSION_CODE="${GITHUB_RUN_NUMBER}"
+          elif [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION_NAME="${GITHUB_REF#refs/tags/}"
+            VERSION_CODE="${GITHUB_RUN_NUMBER}"
+          else
+            VERSION_NAME="$(grep '^versionName=' gradle.properties | cut -d= -f2-)"
+            VERSION_CODE="$(grep '^versionCode=' gradle.properties | cut -d= -f2-)"
+          fi
+          echo "VERSION_NAME=${VERSION_NAME}" >> "$GITHUB_OUTPUT"
+          echo "VERSION_CODE=${VERSION_CODE}" >> "$GITHUB_OUTPUT"
+
+      - name: Decode release keystore
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          DROIDRUN_KEYSTORE_BASE64: ${{ secrets.DROIDRUN_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          [[ -n "${DROIDRUN_KEYSTORE_BASE64}" ]]
+          echo "${DROIDRUN_KEYSTORE_BASE64}" | base64 -d > "${RUNNER_TEMP}/keystore.jks"
+          echo "DROIDRUN_KEYSTORE_PATH=${RUNNER_TEMP}/keystore.jks" >> "${GITHUB_ENV}"
+
+      - name: Build with Gradle
+        env:
+          DROIDRUN_KEYSTORE_PASSWORD: ${{ secrets.DROIDRUN_KEYSTORE_PASSWORD }}
+          DROIDRUN_KEYSTORE_KEY_ALIAS: ${{ secrets.DROIDRUN_KEYSTORE_KEY_ALIAS }}
+          DROIDRUN_KEYSTORE_KEY_PASSWORD: ${{ secrets.DROIDRUN_KEYSTORE_KEY_PASSWORD }}
+        run: |
+          VERSION_NAME="${{ steps.version.outputs.VERSION_NAME }}"
+          VERSION_CODE="${{ steps.version.outputs.VERSION_CODE }}"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            ./gradlew assembleRelease --no-daemon -PversionName="${VERSION_NAME}" -PversionCode="${VERSION_CODE}"
+          else
+            ./gradlew assembleDebug --no-daemon
+          fi
+
+      - name: Verify APK version metadata
+        run: |
+          set -euo pipefail
+
+          EXPECTED_VERSION_NAME="${{ steps.version.outputs.VERSION_NAME }}"
+          EXPECTED_VERSION_CODE="${{ steps.version.outputs.VERSION_CODE }}"
+
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [[ -z "${SDK_ROOT}" ]]; then
+            echo "Android SDK root is not set"
+            exit 1
+          fi
+
+          BUILD_TOOLS_DIR="$(find "${SDK_ROOT}/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)"
+          if [[ -z "${BUILD_TOOLS_DIR}" ]]; then
+            echo "Android build-tools directory not found under ${SDK_ROOT}"
+            exit 1
+          fi
+
+          AAPT_BIN="${BUILD_TOOLS_DIR}/aapt"
+          if [[ ! -x "${AAPT_BIN}" ]]; then
+            echo "aapt not found at ${AAPT_BIN}"
+            exit 1
+          fi
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            APK="$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' | head -n1)"
+          else
+            APK="$(find app/build/outputs/apk/debug -maxdepth 1 -name '*.apk' | head -n1)"
+          fi
+          [[ -n "${APK}" ]]
+          BADGING="$("${AAPT_BIN}" dump badging "${APK}")"
+          ACTUAL_VERSION_NAME="$(printf '%s\n' "${BADGING}" | sed -n "s/.* versionName='\([^']*\)'.*/\1/p" | head -n1)"
+          ACTUAL_VERSION_CODE="$(printf '%s\n' "${BADGING}" | sed -n "s/.* versionCode='\([^']*\)'.*/\1/p" | head -n1)"
+
+          echo "Expected versionName=${EXPECTED_VERSION_NAME} versionCode=${EXPECTED_VERSION_CODE}"
+          echo "Actual versionName=${ACTUAL_VERSION_NAME} versionCode=${ACTUAL_VERSION_CODE}"
+
+          [[ "${ACTUAL_VERSION_NAME}" == "${EXPECTED_VERSION_NAME}" ]]
+          [[ "${ACTUAL_VERSION_CODE}" == "${EXPECTED_VERSION_CODE}" ]]
+
+      - name: Verify release APK signature
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          BUILD_TOOLS_DIR="$(find "${SDK_ROOT}/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)"
+          APKSIGNER_BIN="${BUILD_TOOLS_DIR}/apksigner"
+          APK="$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' | head -n1)"
+
+          [[ -x "${APKSIGNER_BIN}" ]]
+          [[ -n "${APK}" ]]
+
+          "${APKSIGNER_BIN}" verify --print-certs "${APK}"
+
+      - name: Copy release APK to workspace root
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+
+          VERSION_NAME="${{ steps.version.outputs.VERSION_NAME }}"
+          ARTIFACT_PREFIX="${PORTAL_ARTIFACT_PREFIX}"
+          RELEASE_APK="$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' | head -n1)"
+
+          [[ -n "${RELEASE_APK}" ]]
+
+          cp "${RELEASE_APK}" "${ARTIFACT_PREFIX}-${VERSION_NAME}.apk"
+
+      - name: Generate update feed
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+
+          VERSION_NAME="${{ steps.version.outputs.VERSION_NAME }}"
+          VERSION_CODE="${{ steps.version.outputs.VERSION_CODE }}"
+          ARTIFACT_PREFIX="${PORTAL_ARTIFACT_PREFIX}"
+          RELEASE_APK="${ARTIFACT_PREFIX}-${VERSION_NAME}.apk"
+          APK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION_NAME}/${RELEASE_APK}"
+
+          [[ -f "${RELEASE_APK}" ]]
+
+          SHA256="$(sha256sum "${RELEASE_APK}" | awk '{print $1}')"
+          cat > latest.json <<EOF
+          {
+            "version": "${VERSION_NAME}",
+            "versionCode": ${VERSION_CODE},
+            "packageName": "${ARTIFACT_PREFIX}",
+            "apkUrl": "${APK_URL}",
+            "sha256": "${SHA256}"
+          }
+          EOF
+
+      - name: Upload release files
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: |
+            ${{ env.PORTAL_ARTIFACT_PREFIX }}-*.apk
+            latest.json
+          retention-days: 1
+
+      - name: Upload debug APK
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: app/build/outputs/apk/debug/*.apk
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download built APKs
+        uses: actions/download-artifact@v4
+        with:
+          name: app-release
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/*.apk
+            artifacts/latest.json
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+
+  deploy-r2:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    uses: ./.github/workflows/deploy-r2.yml
+    with:
+      artifact-name: app-release
+      file-prefix: com.mobilerun.portal
+      tag: ${{ needs.build.outputs.version-name }}
+    secrets:
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
