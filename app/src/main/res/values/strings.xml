@@ -1,8 +1,8 @@
 <resources>
-    <string name="app_name">FastAutomate</string>
+    <string name="app_name">FastAutomate v2</string>
     <string name="accessibility_service_description">FastAutomate identifies and visualizes UI elements on screen. This service helps to detect which elements are visible to the user by examining the layers of the UI, which is useful for UI analysis and automation.</string>
-    <string name="keyboard_name">FastAutomate Keyboard</string>
-    <string name="keyboard_on">FastAutomate Keyboard</string>
+    <string name="keyboard_name">FastAutomate v2 Keyboard</string>
+    <string name="keyboard_on">FastAutomate v2 Keyboard</string>
 
     <!-- Activity Main -->
     <string name="settings_content_description">Settings</string>

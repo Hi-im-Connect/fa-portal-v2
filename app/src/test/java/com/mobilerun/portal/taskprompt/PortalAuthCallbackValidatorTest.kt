@@ -18,7 +18,7 @@ class PortalAuthCallbackValidatorTest {
         )
 
         assertEquals(
-            "https://digimate.fastautomate.com/mobile/connect/device?deviceId=device-123&scheme=fastautomate",
+            "https://digimate.fastautomate.com/mobile2/connect/device?deviceId=device-123&scheme=fastautomate2",
             url,
         )
     }
@@ -31,15 +31,16 @@ class PortalAuthCallbackValidatorTest {
         )
 
         assertEquals(
-            "https://digimate.fastautomate.com/mobile/connect/device?deviceId=device-123&scheme=fastautomate&force_login=true",
+            "https://digimate.fastautomate.com/mobile2/connect/device?deviceId=device-123&scheme=fastautomate2&force_login=true",
             url,
         )
     }
 
     @Test
-    fun matchesPreferredAndLegacyAuthCallbackSchemes() {
-        assertTrue(PortalAuthDeepLink.isAuthCallback("droidrun", "auth-callback"))
-        assertTrue(PortalAuthDeepLink.isAuthCallback("mobilerun", "auth-callback"))
+    fun acceptsOnlyTheV2AuthCallbackScheme() {
+        assertTrue(PortalAuthDeepLink.isAuthCallback("fastautomate2", "auth-callback"))
+        assertFalse(PortalAuthDeepLink.isAuthCallback("droidrun", "auth-callback"))
+        assertFalse(PortalAuthDeepLink.isAuthCallback("mobilerun", "auth-callback"))
     }
 
     @Test

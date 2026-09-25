@@ -21,3 +21,4 @@ makeportal
 /branding/.venv/
 /signing/
 /dist/
+.superpowers/

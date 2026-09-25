@@ -46,9 +46,9 @@ class PortalCloudClientTest {
     @Test
     fun deriveCloudBaseUrl_keepsCustomDashboardHostAndPath() {
         // FastAutomate: the app talks to our own dashboard, not only to mobilerun.ai
-        val url = "wss://digimate.fastautomate.com/mobile/v1/providers/personal/join"
+        val url = "wss://digimate.fastautomate.com/mobile2/v1/providers/personal/join"
 
-        assertEquals("https://digimate.fastautomate.com/mobile", PortalCloudClient.deriveCloudBaseUrl(url))
+        assertEquals("https://digimate.fastautomate.com/mobile2", PortalCloudClient.deriveCloudBaseUrl(url))
     }
 
     @Test

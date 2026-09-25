@@ -225,16 +225,10 @@
                 <category android:name="android.intent.category.BROWSABLE" />
 
                 <data
-                    android:scheme="mobilerun"
+                    android:scheme="fastautomate2"
                     android:host="auth-callback" />
                 <data
-                    android:scheme="droidrun"
-                    android:host="auth-callback" />
-                <data
-                    android:scheme="fastautomate"
-                    android:host="auth-callback" />
-                <data
-                    android:scheme="fastautomate"
+                    android:scheme="fastautomate2"
                     android:host="connect" />
             </intent-filter>
         </activity>

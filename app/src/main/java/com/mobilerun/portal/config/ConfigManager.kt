@@ -101,8 +101,8 @@ class ConfigManager private constructor(private val context: Context) {
         private const val DEFAULT_SOCKET_PORT = 8080
         private const val DEFAULT_WEBSOCKET_PORT = 8081
         // FastAutomate build: phones connect to the Mobile RPA dashboard by default.
-        private const val DEFAULT_REVERSE_CONNECTION_URL =
-            "wss://digimate.fastautomate.com/mobile/v1/providers/personal/join"
+        const val DEFAULT_REVERSE_CONNECTION_URL =
+            "wss://digimate.fastautomate.com/mobile2/v1/providers/personal/join"
 
         // TODO replace
         @Volatile

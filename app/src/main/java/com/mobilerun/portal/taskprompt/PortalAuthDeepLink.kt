@@ -4,14 +4,13 @@ import java.net.URLEncoder
 
 object PortalAuthDeepLink {
     const val CALLBACK_HOST = "auth-callback"
-    const val PREFERRED_CALLBACK_SCHEME = "fastautomate"
+    const val PREFERRED_CALLBACK_SCHEME = "fastautomate2"
 
-    private const val LEGACY_CALLBACK_SCHEME = "mobilerun"
-    private const val CLOUD_AUTH_DEVICE_URL = "https://digimate.fastautomate.com/mobile/connect/device"
-    // QR / link from the dashboard: fastautomate://connect?token=...&url=...
+        private const val CLOUD_AUTH_DEVICE_URL = "https://digimate.fastautomate.com/mobile2/connect/device"
+    // QR / link from the dashboard: fastautomate2://connect?token=...&url=...
     const val CONNECT_HOST = "connect"
     private val ACCEPTED_CALLBACK_SCHEMES =
-        setOf(PREFERRED_CALLBACK_SCHEME, LEGACY_CALLBACK_SCHEME, "droidrun")
+        setOf(PREFERRED_CALLBACK_SCHEME)
 
     fun buildCloudLoginUrl(deviceId: String, forceLogin: Boolean): String {
         val encodedDeviceId = URLEncoder.encode(deviceId, Charsets.UTF_8.name())
