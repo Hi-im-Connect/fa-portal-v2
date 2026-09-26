@@ -37,7 +37,8 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal fun shouldRedactReverseRequestPayload(normalizedMethod: String): Boolean =
-    normalizedMethod == "clipboard/set" || normalizedMethod == "app/deep-link"
+    normalizedMethod == "clipboard/set" || normalizedMethod == "app/deep-link" ||
+        normalizedMethod == "agent/credentials" // carries the phone's AI key
 
 internal fun shouldRedactReverseResponsePayload(normalizedMethod: String): Boolean =
     normalizedMethod == "clipboard/get" || normalizedMethod == "app/deep-link"

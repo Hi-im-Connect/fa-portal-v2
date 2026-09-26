@@ -102,4 +102,23 @@ class LlmClientTest {
             assertTrue(e.message!!.contains("no AI key"))
         }
     }
+
+    @Test
+    fun `a 200 reply without choices is retried, then a readable error`() {
+        val bad = HttpResult(200, """{"error":{"message":"upstream failed"}}""")
+        val slept = mutableListOf<Long>()
+        try {
+            LlmClient(ScriptedTransport(bad, bad, bad), "u", { "k" }, { slept += it }).complete("m", messages, tools)
+            fail("expected an error")
+        } catch (e: LlmError) {
+            assertTrue(e.message!!, e.message!!.contains("upstream failed"))
+        }
+        assertEquals(2, slept.size)
+    }
+
+    @Test
+    fun `a tool call without a name is a text reply`() {
+        val body = """{"choices":[{"message":{"content":"","tool_calls":[{"function":{"arguments":"{}"}}]}}]}"""
+        assertTrue(LlmClient.parse(body) is LlmReply.Text)
+    }
 }

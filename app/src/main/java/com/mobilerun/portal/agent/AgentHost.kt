@@ -33,6 +33,10 @@ class AgentHost(
     @Volatile
     private var current: Pair<String, AgentLoop>? = null
 
+    // every send goes through the outbox, one at a time, oldest first; a message goes once per connection
+    private val sendLock = Any()
+    private val sentOnThisConnection = HashSet<String>()
+
     fun keyHash(): String = vault.hash()
 
     fun running(): String? = current?.first
@@ -51,8 +55,13 @@ class AgentHost(
             start(RunSpec.fromJson(params), announce = false)
         }
         "agent/stop" -> {
-            stop(params.optString("uuid"))
-            ApiResponse.RawObject(JSONObject().put("stopping", true))
+            val uuid = params.optString("uuid")
+            if (current?.first != uuid) {
+                ApiResponse.Error("This phone is not running that task")  // e.g. the app was restarted
+            } else {
+                stop(uuid)
+                ApiResponse.RawObject(JSONObject().put("stopping", true))
+            }
         }
         "agent/ack" -> {
             outbox.ack(params.optString("uuid"), params.optInt("seq", -1))
@@ -105,37 +114,66 @@ class AgentHost(
         current?.let { (id, loop) -> if (uuid.isEmpty() || id == uuid) loop.stopRequested = true }
     }
 
-    fun onConnected() = outbox.flush(send)
+    fun onConnected() {
+        synchronized(sendLock) { sentOnThisConnection.clear() }
+        flush()
+    }
+
+    /** Runs cut off when the app was killed: tell the dashboard (and the local history) they ended. */
+    fun closeInterrupted(uuids: List<String>) {
+        for (uuid in uuids) {
+            val result = "The app was restarted during this task"
+            post("agent/finished", uuid, INTERRUPTED_SEQ, JSONObject().put("status", RunStatus.FAILED.wire).put("result", result).put("steps", 0))
+            listener?.finished(uuid, RunStatus.FAILED, result, 0, null)
+        }
+    }
+
+    private fun flush() {
+        synchronized(sendLock) {
+            for (message in outbox.pending()) {
+                val params = message.getJSONObject("params")
+                val key = "${params.getString("uuid")}#${params.getInt("seq")}"
+                if (key in sentOnThisConnection) continue
+                val ok = runCatching { send(message.toString()) }.getOrDefault(false)
+                if (!ok) return  // offline: the outbox keeps it for the next connection
+                sentOnThisConnection += key
+            }
+        }
+    }
 
     private fun finish(spec: RunSpec, control: PhoneControl, loop: AgentLoop, seq: AtomicInteger, fromApp: Boolean) {
         if (fromApp) { // started from FastAutomate's own screen, which the screen reader skips: leave it first
             control.global(Actions.GLOBAL_HOME)
             control.sleep(LEAVE_APP_MS)
         }
-        val result = try {
-            loop.run()
-        } catch (e: Exception) {
-            AgentLoop.Result(RunStatus.FAILED, "The agent crashed: ${e.message}", 0)
+        try {
+            val result = try {
+                loop.run()
+            } catch (e: Exception) {
+                AgentLoop.Result(RunStatus.FAILED, "The agent crashed: ${e.message}", 0)
+            }
+            val shot = runCatching { control.screenshot(SHOT_SIDE, SHOT_QUALITY) }.getOrNull()
+            val params = JSONObject().put("status", result.status.wire).put("result", result.result).put("steps", result.steps)
+            if (shot != null) params.put("shot", shot)
+            runCatching { post("agent/finished", spec.uuid, seq.incrementAndGet(), params) }
+            runCatching { listener?.finished(spec.uuid, result.status, result.result, result.steps, shot) }
+        } finally {
+            synchronized(this) { current = null }  // never leave the phone stuck as busy
         }
-        val shot = runCatching { control.screenshot(SHOT_SIDE, SHOT_QUALITY) }.getOrNull()
-        val params = JSONObject().put("status", result.status.wire).put("result", result.result).put("steps", result.steps)
-        if (shot != null) params.put("shot", shot)
-        post("agent/finished", spec.uuid, seq.incrementAndGet(), params)
-        synchronized(this) { current = null }
-        listener?.finished(spec.uuid, result.status, result.result, result.steps, shot)
     }
 
     private fun post(method: String, uuid: String, seq: Int, params: JSONObject) {
         params.put("uuid", uuid).put("seq", seq).put("ts", Instant.ofEpochMilli(clock()).toString())
         val message = JSONObject().put("method", method).put("params", params)
         outbox.add(message)
-        send(message.toString())
+        flush()
     }
 
     companion object {
         const val SHOT_SIDE = 480
         const val SHOT_QUALITY = 60
         const val LEAVE_APP_MS = 800L
+        const val INTERRUPTED_SEQ = 999_999
     }
 }
 
@@ -167,7 +205,10 @@ object AgentRuntime {
             bundledDefaults = {
                 runCatching { context.assets.open("agent_defaults.json").bufferedReader().readText() }.getOrNull()
             },
-        ).also { it.listener = runs }
+        ).also {
+            it.listener = runs
+            it.closeInterrupted(runs.running())  // runs the last process could not finish
+        }
     }
 
     fun host(): AgentHost? = host

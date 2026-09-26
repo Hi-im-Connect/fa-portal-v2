@@ -62,6 +62,9 @@ class RunStore(
     fun get(uuid: String): RunRecord? = runs[uuid]
 
     @Synchronized
+    fun running(): List<String> = runs.values.filter { it.status == "running" }.map { it.uuid }
+
+    @Synchronized
     fun page(page: Int, size: Int): Pair<List<RunRecord>, Int> {
         val newest = runs.values.reversed()
         return newest.drop((page.coerceAtLeast(1) - 1) * size).take(size) to newest.size

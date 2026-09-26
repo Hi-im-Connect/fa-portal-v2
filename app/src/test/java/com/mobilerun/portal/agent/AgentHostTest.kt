@@ -146,4 +146,53 @@ class AgentHostTest {
         host.start(RunSpec.fromJson(runParams("u8")), announce = true)
         assertEquals("global 2", phone.done.first())  // leave the FastAutomate screen first
     }
+
+    @Test
+    fun `a send that throws does not end the run`() {
+        val host = AgentHost(
+            outbox = Outbox(tmp.newFile()), vault = KeyVault(tmp.newFile(), box), phone = { FakePhone(state) },
+            transport = ScriptedTransport(toolReply("done", """{"success":true,"answer":"ok"}""")),
+            send = { throw IllegalStateException("socket closed") }, runner = { it.run() },
+        )
+        credentials(host)
+        host.handle("agent/run", runParams("u1"))
+        assertEquals(null, host.running())
+        assertTrue(host.handle("agent/run", runParams("u2")) !is ApiResponse.Error)  // the phone is free again
+    }
+
+    @Test
+    fun `reports go out once and in order, and all again after a reconnect`() {
+        var online = false
+        val wire = mutableListOf<Int>()
+        val host = AgentHost(
+            outbox = Outbox(tmp.newFile()), vault = KeyVault(tmp.newFile(), box), phone = { FakePhone(state) },
+            transport = ScriptedTransport(toolReply("wait", """{"seconds":1}"""), toolReply("done", """{"success":true,"answer":"ok"}""")),
+            send = { if (online) { wire += JSONObject(it).getJSONObject("params").getInt("seq"); true } else false },
+            runner = { it.run() },
+        )
+        credentials(host)
+        host.start(RunSpec.fromJson(runParams("u5")), announce = true)  // all while offline
+        assertTrue(wire.isEmpty())
+        online = true
+        host.onConnected()
+        assertEquals((0 until wire.size).toList(), wire)  // agent/started (0) first, then 1, 2, ...
+        val before = wire.size
+        host.onConnected()  // a second connection resends what was not acked
+        assertEquals(before * 2, wire.size)
+    }
+
+    @Test
+    fun `runs cut off by an app restart are closed`() {
+        val host = host(ScriptedTransport())
+        host.closeInterrupted(listOf("u9"))
+        val finished = sent.single()
+        assertEquals("agent/finished", finished.getString("method"))
+        assertEquals("failed", finished.getJSONObject("params").getString("status"))
+    }
+
+    @Test
+    fun `stopping a run the phone is not running is an error`() {
+        val host = host(ScriptedTransport())
+        assertTrue(host.handle("agent/stop", JSONObject().put("uuid", "nope")) is ApiResponse.Error)
+    }
 }

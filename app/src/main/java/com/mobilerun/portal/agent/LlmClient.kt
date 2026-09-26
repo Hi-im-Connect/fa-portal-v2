@@ -55,7 +55,17 @@ class LlmClient(
         while (true) {
             val r = transport.post("$baseUrl/chat/completions", headers, body.toString(), 60_000)
             when {
-                r.code == 200 -> return parse(r.body)
+                r.code == 200 -> {
+                    val reply = runCatching { parse(r.body) }.getOrNull()
+                    if (reply != null) return reply
+                    // a 200 without usable choices (OpenRouter relays upstream failures like this): retry, then say so
+                    if (attempt < 2) {
+                        attempt++
+                        sleep(1500L * attempt)
+                    } else {
+                        throw LlmError("The AI returned no answer: ${errorText(r.body)}")
+                    }
+                }
                 r.code == 402 -> throw LlmError(ACCOUNT_EMPTY_MESSAGE, budget = true)
                 r.code == 403 && r.body.contains("limit", ignoreCase = true) -> throw LlmError(BUDGET_MESSAGE, budget = true)
                 r.code == 401 -> throw LlmError("This phone's AI key was refused. Reconnect it to the dashboard to get a new one.")
@@ -77,7 +87,8 @@ class LlmClient(
             val thought = if (message.isNull("content")) "" else message.optString("content").trim()
             val calls = message.optJSONArray("tool_calls")
             if (calls == null || calls.length() == 0) return LlmReply.Text(thought)
-            val function = calls.getJSONObject(0).getJSONObject("function")
+            val function = calls.getJSONObject(0).optJSONObject("function") ?: return LlmReply.Text("A tool call without a function")
+            if (function.optString("name").isBlank()) return LlmReply.Text("A tool call without a name")
             val raw = function.optString("arguments").ifBlank { "{}" }
             val args = try {
                 JSONObject(raw)

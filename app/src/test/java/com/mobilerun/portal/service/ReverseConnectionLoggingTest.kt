@@ -9,6 +9,7 @@ class ReverseConnectionLoggingTest {
     fun requestRedaction_coversSensitiveWritePayloads() {
         assertTrue(shouldRedactReverseRequestPayload("clipboard/set"))
         assertTrue(shouldRedactReverseRequestPayload("app/deep-link"))
+        assertTrue(shouldRedactReverseRequestPayload("agent/credentials"))  // the phone's AI key
         assertFalse(shouldRedactReverseRequestPayload("clipboard/get"))
         assertFalse(shouldRedactReverseRequestPayload("app"))
     }
