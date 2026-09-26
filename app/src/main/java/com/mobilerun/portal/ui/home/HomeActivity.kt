@@ -218,7 +218,10 @@ class HomeActivity : AppCompatActivity(), RunListener {
         }
         val last = AgentRuntime.store()?.page(1, 1)?.first?.firstOrNull()?.takeIf { it.status != "running" }
         b.lastResult.visibility = if (last != null) View.VISIBLE else View.GONE
-        if (last != null) b.lastResult.text = "Last: ${last.instruction}\n${label(last.status)}: ${last.result.take(160)}"
+        if (last != null) {
+            val outcome = if (last.result.isBlank() || last.result == label(last.status)) label(last.status) else "${label(last.status)}: ${last.result.take(160)}"
+            b.lastResult.text = "Last: ${last.instruction}\n$outcome"
+        }
     }
 
     override fun started(spec: RunSpec, origin: String) { main.post { refreshLive(); refreshTasks() } }

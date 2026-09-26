@@ -49,4 +49,11 @@
     <color name="fa_bar">#0B100D</color>
     <color name="fa_input_line">#34413A</color>
     <color name="fa_bar_line">#222C25</color>
+    <!-- FastAutomate chat bubble panel -->
+    <color name="fa_chat_step">#26322B</color>
+    <color name="fa_chat_input">#222C26</color>
+    <color name="fa_chat_good">#173A26</color>
+    <color name="fa_chat_good_ink">#8FE0B1</color>
+    <color name="fa_chat_bad">#3F1F1B</color>
+    <color name="fa_chat_bad_ink">#F2A69D</color>
 </resources>

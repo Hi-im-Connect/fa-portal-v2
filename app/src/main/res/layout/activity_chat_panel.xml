@@ -1,11 +1,62 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- The bubble's chat panel (Messenger style): header, conversation, Pause/Stop while running, message box. -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:id="@+id/chat_root"
+    android:id="@+id/chat_scrim"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="#99000000"
+    android:fitsSystemWindows="true">
+
+<LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+<!-- Messenger's top row: "+" for a new task, then the bubble (it springs onto head_slot) -->
+<LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="76dp"
+    android:gravity="end|center_vertical"
+    android:orientation="horizontal"
+    android:paddingEnd="12dp">
+
+    <ImageButton
+        android:id="@+id/chat_new"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:background="@drawable/fa_new_bg"
+        android:contentDescription="New task"
+        android:elevation="6dp"
+        android:src="@drawable/fa_ic_plus" />
+
+    <View
+        android:id="@+id/head_slot"
+        android:layout_width="60dp"
+        android:layout_height="60dp"
+        android:layout_marginStart="14dp" />
+</LinearLayout>
+
+<ImageView
+    android:id="@+id/chat_pointer"
+    android:layout_width="20dp"
+    android:layout_height="10dp"
+    android:layout_gravity="end"
+    android:layout_marginEnd="32dp"
+    android:contentDescription="@null"
+    android:src="@drawable/fa_pointer" />
+
+<!-- the card: under the bubble, down to just above the keyboard -->
+<LinearLayout
+    android:id="@+id/chat_root"
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_weight="1"
+    android:layout_marginHorizontal="8dp"
+    android:layout_marginBottom="12dp"
     android:background="@drawable/fa_chat_bg"
+    android:clickable="true"
+    android:focusable="false"
     android:orientation="vertical">
 
     <LinearLayout
@@ -49,13 +100,6 @@
                 android:textSize="12sp" />
         </LinearLayout>
 
-        <ImageButton
-            android:id="@+id/chat_close"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Close"
-            android:src="@drawable/fa_ic_close" />
     </LinearLayout>
 
     <View
@@ -121,6 +165,7 @@
 
         <EditText
             android:id="@+id/chat_input"
+            android:textCursorDrawable="@drawable/fa_cursor"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
@@ -146,3 +191,5 @@
             android:src="@drawable/fa_ic_send" />
     </LinearLayout>
 </LinearLayout>
+</LinearLayout>
+</FrameLayout>

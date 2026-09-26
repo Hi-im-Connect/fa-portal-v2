@@ -66,6 +66,7 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     implementation(libs.androidx.recyclerview)
+    implementation(libs.androidx.dynamicanimation) // spring physics for the chat bubble
     implementation(libs.androidx.swiperefreshlayout)
     implementation(libs.java.websocket)
     implementation(libs.webrtc)

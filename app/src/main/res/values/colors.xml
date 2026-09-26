@@ -148,4 +148,11 @@
     <color name="task_status_tracking_timeout">@color/mobilerun_muted_foreground</color>
     <color name="task_status_unknown">@color/mobilerun_muted_foreground</color>
     <color name="task_status_ring_empty">@color/mobilerun_border</color>
+    <!-- FastAutomate chat bubble panel -->
+    <color name="fa_chat_step">#EEF0EA</color>
+    <color name="fa_chat_input">#EEF0EA</color>
+    <color name="fa_chat_good">#DDF3E6</color>
+    <color name="fa_chat_good_ink">#0B5E33</color>
+    <color name="fa_chat_bad">#FBE3E0</color>
+    <color name="fa_chat_bad_ink">#9C2F25</color>
 </resources>
