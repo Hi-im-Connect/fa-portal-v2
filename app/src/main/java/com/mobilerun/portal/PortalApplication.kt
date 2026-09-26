@@ -20,6 +20,7 @@ class PortalApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        com.mobilerun.portal.agent.AgentRuntime.init(this)
         val configManager = ConfigManager.getInstance(this)
         val http402Snapshot = configManager.reverseJoinHttp402Snapshot()
         http402BlockedPresentationState(

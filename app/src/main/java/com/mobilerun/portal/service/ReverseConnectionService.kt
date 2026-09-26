@@ -241,6 +241,7 @@ class ReverseConnectionService : Service() {
         headers["X-Device-ID"] = configManager.deviceID
         headers["X-Device-Name"] = configManager.deviceName
         headers["X-Android-Version"] = android.os.Build.VERSION.RELEASE // FastAutomate dashboard chip
+        headers["X-Agent-Key-Hash"] = com.mobilerun.portal.agent.AgentRuntime.keyHash()
         headers["X-Device-Country"] = configManager.deviceCountryCode
 
         val serviceKey = configManager.reverseConnectionServiceKey
@@ -310,6 +311,7 @@ class ReverseConnectionService : Service() {
                     retryController.onConnected()
                     reconnectStartedAtMs = 0L
                     ConnectionStateManager.setState(ConnectionState.CONNECTED)
+                    com.mobilerun.portal.agent.AgentRuntime.onConnected() // resend reports the dashboard has not acked
                     showReverseConnectionToastIfEnoughTimeIsPassed()
                     WebRtcManager.getExistingInstance()?.let { manager ->
                         manager.setReverseConnectionService(this@ReverseConnectionService)

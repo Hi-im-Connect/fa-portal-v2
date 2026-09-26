@@ -72,6 +72,10 @@ class ActionDispatcher(
             val method =
                 action.removePrefix("/action/").removePrefix("action.").removePrefix("/")
         ) {
+            // FastAutomate v2: the agent runs on this phone
+            "agent/run", "agent/stop", "agent/credentials", "agent/ack" ->
+                com.mobilerun.portal.agent.AgentRuntime.handle(method, params)
+
             "tap" -> {
                 val x = params.optInt("x", 0)
                 val y = params.optInt("y", 0)
