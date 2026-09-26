@@ -5,13 +5,13 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class SetupStepsTest {
-    private val nothing = SetupState(linked = false, notifications = false, battery = false, accessibility = false)
+    private val nothing = SetupState(linked = false, notifications = false, battery = false, accessibility = false, overlay = false)
 
     @Test
     fun `missing steps come in order and finished ones drop out`() {
-        assertEquals(listOf(Step.NOTIFICATIONS, Step.BATTERY, Step.ACCESSIBILITY, Step.DASHBOARD), SetupSteps.missing(nothing))
-        assertEquals(listOf(Step.ACCESSIBILITY), SetupSteps.missing(nothing.copy(linked = true, notifications = true, battery = true)))
-        assertEquals(emptyList<Step>(), SetupSteps.missing(SetupState(true, true, true, true)))
+        assertEquals(listOf(Step.NOTIFICATIONS, Step.BATTERY, Step.ACCESSIBILITY, Step.OVERLAY, Step.DASHBOARD), SetupSteps.missing(nothing))
+        assertEquals(listOf(Step.ACCESSIBILITY), SetupSteps.missing(nothing.copy(linked = true, notifications = true, battery = true, overlay = true)))
+        assertEquals(emptyList<Step>(), SetupSteps.missing(SetupState(true, true, true, true, true)))
     }
 
     @Test
@@ -23,6 +23,8 @@ class SetupStepsTest {
         tried += Step.BATTERY
         assertEquals(Step.ACCESSIBILITY, SetupSteps.nextAuto(nothing, tried))
         tried += Step.ACCESSIBILITY
+        assertEquals(Step.OVERLAY, SetupSteps.nextAuto(nothing, tried))
+        tried += Step.OVERLAY
         assertNull(SetupSteps.nextAuto(nothing, tried)) // the dashboard step waits for the invite link
     }
 }

@@ -132,6 +132,13 @@ class AgentHost(
         defaultsFile?.writeText(JSONObject(params.toString()).apply { remove("uuid"); remove("instruction") }.toString())
     }
 
+    /** A chat line for the dashboard (role "deleted" = the chat was deleted), kept until acked like run reports. */
+    fun postChat(chatId: String, seq: Int, role: String, text: String, run: String?) {
+        val params = JSONObject().put("role", role).put("text", text)
+        if (run != null) params.put("run", run)
+        post("agent/chat", chatId, seq, params)
+    }
+
     fun isPaused(): Boolean = current?.second?.paused == true
 
     /** Pause or resume the running task (an empty uuid means whichever is running). */
@@ -227,7 +234,11 @@ object AgentRuntime {
         val dir = File(context.filesDir, "agent").apply { mkdirs() }
         val runs = RunStore(File(dir, "runs"))
         store = runs
-        chats = ChatStore(File(dir, "chats.json"))
+        chats = ChatStore(
+            File(dir, "chats.json"),
+            onLine = { id, seq, line -> host?.postChat(id, seq, line.role, line.text, line.run) },
+            onDelete = { id, seq -> host?.postChat(id, seq, "deleted", "", null) },
+        )
         host = AgentHost(
             outbox = Outbox(File(dir, "outbox.json")),
             vault = KeyVault(File(dir, "key.json"), KeystoreSecretBox()),

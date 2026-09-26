@@ -81,12 +81,19 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
     private lateinit var pause: TextView
     private lateinit var input: EditText
     private lateinit var trash: View
+    private lateinit var convo: View
+    private lateinit var browse: View
+    private lateinit var browseList: LinearLayout
+    private var browsing = false // "+" shows the chat list
+    private var confirmDelete: String? = null // long-pressed in the list: tap again to delete
 
     private var closing = false
     private var pausedByOpening = false
     private var anchorY = 0 // the bubble's center when the chat opened: the row sits there
     private var ime = 0
     private val thinking = HashSet<String>() // chats waiting for the assistant's answer
+    private val drafts = HashMap<String, String>() // unsent text per chat, kept when you switch or close
+    private var shownChat: String? = null
 
     val isOpen: Boolean get() = root != null && !closing
 
@@ -96,8 +103,14 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
         val ctx = ContextThemeWrapper(service, R.style.Theme_Mobilerun)
         val frame = object : FrameLayout(ctx) {
             override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-                if (event.keyCode == KeyEvent.KEYCODE_BACK) { // Back minimizes, like Messenger
-                    if (event.action == KeyEvent.ACTION_UP) minimize()
+                if (event.keyCode == KeyEvent.KEYCODE_BACK) { // Back hides the keyboard first, then minimizes
+                    if (event.action == KeyEvent.ACTION_UP) {
+                        when {
+                            ime > 0 -> hideKeyboard()
+                            browsing -> toggleBrowse()
+                            else -> minimize()
+                        }
+                    }
                     return true
                 }
                 return super.dispatchKeyEvent(event)
@@ -108,7 +121,8 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
         val (screenW, screenH) = screenSize()
         val top = statusBar()
         params = WindowManager.LayoutParams(
-            screenW, screenH - top, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            // between the status bar and the gesture bar: both stay visible and usable
+            screenW, screenH - top - bottomReserve(), windowType(),
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT,
         ).apply {
@@ -119,12 +133,15 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
         }
         anchorY = bubble.center().second - top
         ime = 0
+        browsing = false
+        confirmDelete = null
         place()
         scrim.alpha = 0f
         column.alpha = 0f
         runCatching { wm.addView(frame, params) }.onFailure { return }
         root = frame
         closing = false
+        shownChat = null // render() restores this chat's draft
         bubble.raise() // the bubble stays on top of the chat, on its slot
         holdTask()
         render()
@@ -136,6 +153,7 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
         val frame = root ?: return
         if (closing) return
         closing = true
+        shownChat?.let { drafts[it] = input.text.toString() }
         hideKeyboard()
         bubble.closed()
         val (hx, hy) = bubble.home()
@@ -157,6 +175,7 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
     /** The screen went off: close at once. */
     fun closeNow() {
         val frame = root ?: return
+        shownChat?.let { drafts[it] = input.text.toString() }
         hideKeyboard()
         runCatching { wm.removeView(frame) }
         root = null
@@ -182,7 +201,6 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
         }
         pointer.alpha = 0f
         pointer.animate().alpha(1f).setStartDelay(120).setDuration(120).start()
-        popHeads()
     }
 
     private fun popHeads() {
@@ -208,7 +226,7 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
         val winH = params.height
         val rowH = dp(64)
         val pointerH = dp(10)
-        val bottom = winH - maxOf(ime, navBar()) - dp(12)
+        val bottom = winH - ime - dp(12)
         var cardH = (winH * CARD_SHARE).toInt()
         var top = (anchorY - rowH / 2).coerceAtLeast(dp(4))
         if (top + rowH + pointerH + cardH > bottom) top = maxOf(dp(4), bottom - rowH - pointerH - cardH)
@@ -225,7 +243,7 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
 
     private fun placePointer() {
         val chatId = AgentRuntime.chats()?.current()?.id
-        val head = (0 until headList.childCount).map { headList.getChildAt(it) }.firstOrNull { it.tag == chatId } ?: return
+        val head = if (browsing) newChat else (0 until headList.childCount).map { headList.getChildAt(it) }.firstOrNull { it.tag == chatId } ?: return
         val h = IntArray(2).also { head.getLocationOnScreen(it) }
         val c = IntArray(2).also { column.getLocationOnScreen(it) }
         pointer.animate().translationX((h[0] - c[0] + head.width / 2 - pointer.width / 2).toFloat()).setDuration(160).start()
@@ -244,7 +262,7 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
         headList = frame.findViewById(R.id.chat_head_list)
         slot = frame.findViewById(R.id.head_slot)
         newChat = frame.findViewById(R.id.chat_new)
-        newChat.setOnClickListener { startNewChat() }
+        newChat.setOnClickListener { toggleBrowse() }
         pointer = frame.findViewById(R.id.chat_pointer)
         card = frame.findViewById(R.id.chat_root)
         scroll = frame.findViewById(R.id.chat_scroll)
@@ -255,6 +273,9 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
         pause = frame.findViewById(R.id.chat_pause)
         input = frame.findViewById(R.id.chat_input)
         trash = frame.findViewById(R.id.chat_trash)
+        convo = frame.findViewById(R.id.chat_convo)
+        browse = frame.findViewById(R.id.chat_browse)
+        browseList = frame.findViewById(R.id.chat_browse_list)
         frame.findViewById<View>(R.id.chat_avatar).apply {
             background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.WHITE) }
             clipToOutline = true
@@ -290,9 +311,20 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
         val store = AgentRuntime.chats() ?: return
         val host = AgentRuntime.host()
         val chat = store.current()
+        if (shownChat != chat.id) { // switched chats: keep what was typed in the old one, bring back this one's
+            shownChat?.let { drafts[it] = input.text.toString() }
+            input.setText(drafts[chat.id].orEmpty())
+            input.setSelection(input.text.length)
+            shownChat = chat.id
+        }
         val running = host?.running() != null
         val paused = host?.isPaused() == true
-        renderHeads(store.chats().map { it.id to it.title }, chat.id)
+        val shown = store.recent().take(MAX_HEADS).map { it.id }.toMutableSet().apply { add(chat.id) }
+        renderHeads(store.chats().filter { it.id in shown }.map { it.id to it.title }, chat.id) // stable order: oldest first
+        convo.visibility = if (browsing) View.GONE else View.VISIBLE
+        browse.visibility = if (browsing) View.VISIBLE else View.GONE
+        (newChat as android.widget.ImageButton).setImageResource(if (browsing) R.drawable.fa_ic_close else R.drawable.fa_ic_plus)
+        if (browsing) renderBrowse(store)
         title.text = if (chat.lines.isEmpty()) "FastAutomate" else chat.title
         status.text = when {
             chat.id in thinking -> "Typing..."
@@ -329,18 +361,20 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
             headList.addView(head, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginStart = dp(10) })
             styleHead(head, i, id == selected, name)
         }
+        popHeads()
+        heads.post { if (isOpen) dock() } // the row moved: the bubble follows onto its slot
     }
 
-    private fun styleHead(head: TextView, index: Int, selected: Boolean, name: String) {
+    private fun styleHead(head: TextView, @Suppress("UNUSED_PARAMETER") index: Int, selected: Boolean, name: String) {
         head.text = initials(name)
         head.foreground = if (head.text.isEmpty()) service.getDrawable(R.drawable.fa_ic_chat) else null // a new, empty chat
         head.foregroundGravity = Gravity.CENTER
         head.background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
-            setColor(HEAD_COLORS[index % HEAD_COLORS.size])
-            if (selected) setStroke(dp(3), Color.WHITE)
+            setColor(colorOf(head.tag as String))
+            if (selected && !browsing) setStroke(dp(3), Color.WHITE)
         }
-        head.alpha = if (selected) 1f else 0.8f
+        head.alpha = if (selected || browsing) 1f else 0.8f
     }
 
     private fun bubbleView(msg: ChatMessage): View {
@@ -367,10 +401,108 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
     }
 
     // ---- chats --------------------------------------------------------------------------------------
+    private fun toggleBrowse() {
+        browsing = !browsing
+        confirmDelete = null
+        hideKeyboard()
+        render()
+        val shown = if (browsing) browse else convo
+        shown.alpha = 0f
+        shown.translationY = dp(12).toFloat()
+        shown.animate().alpha(1f).translationY(0f).setDuration(160).start()
+    }
+
+    /** Messenger's chat list: New chat on top, then every chat, most recently used first. */
+    private fun renderBrowse(store: com.mobilerun.portal.agent.ChatStore) {
+        browseList.removeAllViews()
+        browseList.addView(chatRow("New chat", "Start a new conversation", "+", service.getColor(R.color.mobilerun_primary), null) { startNewChat() })
+        for (c in store.recent().filter { it.lines.isNotEmpty() }) {
+            val last = c.lines.last()
+            val preview = if (confirmDelete == c.id) "Tap again to delete this chat" else when (last.role) {
+                "user" -> "You: ${last.text}"
+                "task" -> "Task: ${last.text}"
+                else -> last.text
+            }.lineSequence().first()
+            val row = chatRow(c.title, preview, initials(c.title), colorOf(c.id), ago(c.updated)) {
+                if (confirmDelete == c.id) {
+                    delete(c.id)
+                } else {
+                    confirmDelete = null
+                    browsing = false
+                    select(c.id)
+                }
+            }
+            row.setOnLongClickListener { confirmDelete = c.id; render(); true }
+            if (confirmDelete == c.id) row.setBackgroundColor(service.getColor(R.color.fa_chat_bad))
+            browseList.addView(row)
+        }
+    }
+
+    private fun chatRow(name: String, preview: String, badge: String, color: Int, time: String?, onTap: () -> Unit): View {
+        val ctx = root!!.context
+        val avatar = TextView(ctx).apply {
+            text = badge
+            gravity = Gravity.CENTER
+            textSize = 17f
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(color) }
+        }
+        val texts = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(ctx).apply {
+                text = name; textSize = 16f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+                setTextColor(service.getColor(R.color.mobilerun_foreground)); setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+            addView(TextView(ctx).apply {
+                text = preview; textSize = 14f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+                setTextColor(service.getColor(if (preview.startsWith("Tap again")) R.color.fa_chat_bad_ink else R.color.mobilerun_muted_foreground))
+            })
+        }
+        return LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+            addView(avatar, LinearLayout.LayoutParams(dp(48), dp(48)))
+            addView(texts, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(12) })
+            if (time != null) addView(TextView(ctx).apply { text = time; textSize = 12f; setTextColor(service.getColor(R.color.mobilerun_muted_foreground)) })
+            isClickable = true
+            background = android.util.TypedValue().let { tv ->
+                ctx.theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+                ctx.getDrawable(tv.resourceId)
+            }
+            setOnClickListener { onTap() }
+        }
+    }
+
+    private fun ago(ms: Long): String {
+        if (ms <= 0) return ""
+        val min = (System.currentTimeMillis() - ms) / 60_000
+        return when {
+            min < 1 -> "now"
+            min < 60 -> "${min}m"
+            min < 24 * 60 -> "${min / 60}h"
+            else -> "${min / (24 * 60)}d"
+        }
+    }
+
+    /** Each chat keeps a color: by the order it was made, so neighbors differ. */
+    private fun colorOf(chatId: String): Int {
+        val at = AgentRuntime.chats()?.chats()?.indexOfFirst { it.id == chatId } ?: -1
+        return HEAD_COLORS[Math.floorMod(if (at >= 0) at else chatId.hashCode(), HEAD_COLORS.size)]
+    }
+
+    /** Open this chat (from the app's Chats screen): null = a new one. */
+    fun show(chatId: String?) {
+        val store = AgentRuntime.chats() ?: return
+        if (chatId == null) store.newChat() else store.select(chatId)
+        browsing = false
+        render()
+    }
+
     private fun startNewChat() {
         AgentRuntime.chats()?.newChat()
+        browsing = false
         render()
-        popHeads()
         input.text.clear()
         input.requestFocus()
         service.getSystemService(InputMethodManager::class.java).showSoftInput(input, 0)
@@ -396,6 +528,7 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
         if (chatId in thinking) return
         store.add(chatId, store.line("user", text))
         input.text.clear()
+        drafts.remove(chatId)
         thinking += chatId
         render()
         Thread {
@@ -432,7 +565,9 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
     private fun startTask(chatId: String, instruction: String) {
         main.postDelayed({
             Thread {
-                val response = AgentRuntime.host()?.startLocal(instruction, null, null, leaveApp = false)
+                // on FastAutomate's own screens (which the agent cannot read) it goes Home first
+                val ours = runCatching { service.rootInActiveWindow?.packageName == service.packageName }.getOrDefault(false)
+                val response = AgentRuntime.host()?.startLocal(instruction, null, null, leaveApp = ours)
                     ?: ApiResponse.Error("The agent is not ready yet")
                 main.post {
                     val store = AgentRuntime.chats() ?: return@post
@@ -545,7 +680,27 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
 
     private fun statusBar() = systemDimen("status_bar_height")
 
-    private fun navBar() = systemDimen("navigation_bar_height")
+    /** Under Android's gesture bar and back arrow when "Display over other apps" is allowed (like Messenger);
+     *  otherwise an accessibility overlay, which draws above them, so it leaves the bottom gesture area free. */
+    private fun windowType() =
+        if (android.provider.Settings.canDrawOverlays(service)) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        else WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+
+    private fun bottomReserve(): Int {
+        if (windowType() == WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY) return 0 // the system keeps it clear
+        var gestures = 0
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            gestures = wm.maximumWindowMetrics.windowInsets.getInsetsIgnoringVisibility(android.view.WindowInsets.Type.mandatorySystemGestures()).bottom
+        }
+        return maxOf(navBar(), gestures, dp(MIN_BOTTOM_DP))
+    }
+
+    private fun navBar(): Int {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            return wm.maximumWindowMetrics.windowInsets.getInsetsIgnoringVisibility(android.view.WindowInsets.Type.navigationBars()).bottom
+        }
+        return systemDimen("navigation_bar_height")
+    }
 
     private fun initials(name: String): String {
         if (name == "New chat") return ""
@@ -553,6 +708,8 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
     }
 
     companion object {
+        private const val MAX_HEADS = 4
+        private const val MIN_BOTTOM_DP = 24
         private const val CARD_SHARE = 0.8f // of the screen below the status bar
         private const val CARD_STIFFNESS = 700f
         private const val CARD_DAMPING = 0.78f

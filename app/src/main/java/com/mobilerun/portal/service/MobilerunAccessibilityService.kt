@@ -326,6 +326,7 @@ class MobilerunAccessibilityService : AccessibilityService(), ConfigManager.Conf
 
         val foregroundApplication = ForegroundApplicationWindowResolver.resolve(event) { windows }
         foregroundApplicationTransitionTracker.advance(foregroundApplication?.packageName)
+        foregroundApplication?.packageName?.let { com.mobilerun.portal.ui.home.FaBubble.foreground(it) } // Home / app switch closes the chat
 
         // Capture activity name from TYPE_WINDOW_STATE_CHANGED events
         // These events typically indicate navigation to a new activity/screen

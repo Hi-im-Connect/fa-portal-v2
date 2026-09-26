@@ -70,6 +70,13 @@
     android:focusable="false"
     android:orientation="vertical">
 
+    <!-- the open conversation -->
+    <LinearLayout
+        android:id="@+id/chat_convo"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -203,6 +210,41 @@
             android:background="@drawable/fa_send_bg"
             android:contentDescription="Send"
             android:src="@drawable/fa_ic_send" />
+    </LinearLayout>
+    </LinearLayout>
+
+    <!-- "+": all your chats, Messenger's chat list, with a New chat row on top -->
+    <LinearLayout
+        android:id="@+id/chat_browse"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/geist_sans"
+            android:paddingHorizontal="18dp"
+            android:paddingTop="16dp"
+            android:paddingBottom="8dp"
+            android:text="Chats"
+            android:textColor="@color/mobilerun_foreground"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <LinearLayout
+                android:id="@+id/chat_browse_list"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingBottom="8dp" />
+        </ScrollView>
     </LinearLayout>
 </LinearLayout>
 </LinearLayout>

@@ -231,4 +231,15 @@ class AgentHostTest {
         assertEquals(listOf("0 started app", "1 started app", "0 finished", "1 finished"), heard)
         assertTrue(phone.done.none { it == "global ${Actions.GLOBAL_HOME}" })
     }
+
+    @Test
+    fun `chat lines go to the dashboard like run reports`() {
+        val host = host(ScriptedTransport())
+        host.postChat("chat1", 1, "user", "open youtube", null)
+        host.postChat("chat1", 2, "task", "Open YouTube", "run9")
+        val params = sent.map { it.getJSONObject("params") }
+        assertEquals(listOf("agent/chat", "agent/chat"), sent.map { it.getString("method") })
+        assertEquals(listOf("chat1#1 user open youtube -", "chat1#2 task Open YouTube run9"),
+            params.map { "${it.getString("uuid")}#${it.getInt("seq")} ${it.getString("role")} ${it.getString("text")} ${it.optString("run", "-")}" })
+    }
 }

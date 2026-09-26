@@ -36,6 +36,7 @@ class ChatStoreTest {
         s.add(s.newChat().id, ChatLine("user", "c", ts = 1))
         s.newChat()
         assertEquals(listOf("b", "c", "New chat"), s.chats().map { it.title })
+        assertEquals(listOf("New chat", "c", "b"), s.recent().map { it.title }) // newest first
     }
 
     @Test
@@ -60,5 +61,32 @@ class ChatStoreTest {
         s.add(a.id, ChatLine("task", "open settings", run = "r1", ts = 1))
         assertEquals(a.id, s.chatOfRun("r1"))
         assertEquals(null, s.chatOfRun("r2"))
+    }
+
+    @Test
+    fun `every line and every delete is reported with its number in the chat`() {
+        val reported = mutableListOf<String>()
+        val s = ChatStore(
+            tmp.root.resolve("chats.json"), clock = { 1L }, ids = { "c${++n}" },
+            onLine = { id, seq, line -> reported += "$id#$seq ${line.role}:${line.text}" },
+            onDelete = { id, seq -> reported += "$id#$seq deleted" },
+        )
+        val a = s.current()
+        s.add(a.id, ChatLine("user", "hi", ts = 1))
+        s.add(a.id, ChatLine("assistant", "hello", ts = 2))
+        s.delete(a.id)
+        assertEquals(listOf("c1#1 user:hi", "c1#2 assistant:hello", "c1#3 deleted"), reported)
+    }
+
+    @Test
+    fun `the most recently used chat comes first`() {
+        var t = 0L
+        val s = ChatStore(tmp.root.resolve("chats.json"), clock = { ++t }, ids = { "c${++n}" })
+        val a = s.current()
+        s.add(a.id, s.line("user", "a"))
+        val b = s.newChat()
+        s.add(b.id, s.line("user", "b"))
+        s.add(a.id, s.line("user", "a again"))
+        assertEquals(listOf("a", "b"), s.recent().map { it.title })
     }
 }

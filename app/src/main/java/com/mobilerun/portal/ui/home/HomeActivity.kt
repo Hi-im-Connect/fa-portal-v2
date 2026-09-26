@@ -50,6 +50,7 @@ class HomeActivity : AppCompatActivity(), RunListener {
 
         b.nav.setOnItemSelectedListener { item -> show(item.itemId); true }
         b.btnRun.setOnClickListener { runTask() }
+        b.btnNewChat.setOnClickListener { openChat(null) }
         b.btnPause.setOnClickListener { AgentRuntime.host()?.let { it.setPaused("", !it.isPaused()) }; refreshLive() }
         b.btnStop.setOnClickListener { AgentRuntime.host()?.running()?.let { AgentRuntime.host()?.stop(it) } }
         b.btnReconnect.setOnClickListener { FaConnect.reconnect(this); toast("Reconnecting...") }
@@ -79,6 +80,7 @@ class HomeActivity : AppCompatActivity(), RunListener {
         refreshSetup(auto = true)
         refreshLive()
         refreshTasks()
+        refreshChats()
         refreshSettings()
     }
 
@@ -93,7 +95,9 @@ class HomeActivity : AppCompatActivity(), RunListener {
 
     private fun show(tab: Int) {
         b.pageHome.visibility = if (tab == R.id.tab_home) View.VISIBLE else View.GONE
+        b.pageChats.visibility = if (tab == R.id.tab_chats) View.VISIBLE else View.GONE
         b.pageTasks.visibility = if (tab == R.id.tab_tasks) View.VISIBLE else View.GONE
+        if (tab == R.id.tab_chats) refreshChats()
         b.pageSettings.visibility = if (tab == R.id.tab_settings) View.VISIBLE else View.GONE
         if (tab == R.id.tab_tasks) refreshTasks()
     }
@@ -105,6 +109,7 @@ class HomeActivity : AppCompatActivity(), RunListener {
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED,
         battery = getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName),
         accessibility = MobilerunAccessibilityService.getInstance() != null,
+        overlay = Settings.canDrawOverlays(this),
     )
 
     private fun refreshSetup(auto: Boolean) {
@@ -122,6 +127,7 @@ class HomeActivity : AppCompatActivity(), RunListener {
             Step.BATTERY -> "Keep running" to "So Android does not stop FastAutomate in the background."
             Step.ACCESSIBILITY -> "Control the screen" to
                 "Switch on FastAutomate v2. If Android says \"Restricted setting\": tap App info, then ⋮ > Allow restricted settings."
+            Step.OVERLAY -> "Show the chat over apps" to "So the chat opens over any app without covering Android's gesture bar."
             Step.DASHBOARD -> "Dashboard" to "Open your invite link once to connect this phone."
         }
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(10), 0, dp(10)) }
@@ -164,6 +170,10 @@ class HomeActivity : AppCompatActivity(), RunListener {
                     Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS),
                 )
                 toast("Switch on FastAutomate v2")
+            }
+            Step.OVERLAY -> {
+                start(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")), Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
+                toast("Allow FastAutomate v2")
             }
             Step.DASHBOARD -> Unit
         }
@@ -230,6 +240,43 @@ class HomeActivity : AppCompatActivity(), RunListener {
 
     override fun finished(uuid: String, status: RunStatus, result: String, steps: Int, shot: String?) {
         main.post { refreshLive(); refreshTasks() }
+    }
+
+    // ---- chats ------------------------------------------------------------------------------
+    private fun refreshChats() {
+        val list = b.chatList
+        list.removeAllViews()
+        val chats = AgentRuntime.chats()?.recent().orEmpty().filter { it.lines.isNotEmpty() }
+        if (chats.isEmpty()) {
+            list.addView(TextView(this).apply {
+                text = "No chats yet. Tap New chat, or the round bubble in any app, and tell it what you need."
+                setTextColor(getColor(R.color.mobilerun_muted_foreground))
+            })
+        }
+        for (c in chats) {
+            val last = c.lines.last()
+            val preview = when (last.role) {
+                "user" -> "You: ${last.text}"
+                "task" -> "Task: ${last.text}"
+                else -> last.text
+            }
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(16), dp(14), dp(16), dp(14))
+                background = getDrawable(R.drawable.fa_input_bg)
+                setOnClickListener { openChat(c.id) }
+            }
+            card.addView(TextView(this).apply { text = c.title; textSize = 15f; setTextColor(getColor(R.color.mobilerun_foreground)); maxLines = 1; setTypeface(typeface, android.graphics.Typeface.BOLD) })
+            card.addView(TextView(this).apply { text = preview; textSize = 13f; setTextColor(getColor(R.color.mobilerun_muted_foreground)); maxLines = 2 })
+            list.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+        }
+    }
+
+    /** Chats live in the bubble: open this one there, over this screen. */
+    private fun openChat(chatId: String?) {
+        if (!FaBubble.openChat(chatId)) {
+            toast(if (!FaBubble.enabled(this)) "Turn on the floating bubble in Settings first" else "Switch on FastAutomate in Accessibility first")
+        }
     }
 
     // ---- tasks ------------------------------------------------------------------------------

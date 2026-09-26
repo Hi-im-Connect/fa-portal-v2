@@ -73,10 +73,11 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
 
     // while a task runs: a small grey pause/play button hangs under the red stop bubble
     private val pauseSize = dp(36)
+    private val pauseBg = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(PAUSED_GREY) }
     private val pauseButton = ImageView(service).apply {
         setImageResource(R.drawable.fa_ic_pause)
         scaleType = ImageView.ScaleType.CENTER
-        background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#6E7A72")) }
+        background = pauseBg
         setOnClickListener { togglePause() }
     }
     private val pauseParams = overlayParams(pauseSize, pauseSize)
@@ -102,6 +103,7 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
     private var hiddenForAgent = false
     private var parked: Pair<Int, Int>? = null // where the bubble was before the chat opened
     private var locked = false
+    private var foregroundApp: String? = null
     private val chat = FaChat(service, this)
 
     // the bubble's offset between window coordinates and the screen, for the agent's hit test
@@ -175,11 +177,15 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
             face.setImageResource(R.drawable.fa_ic_stop)
             face.scaleType = ImageView.ScaleType.CENTER
             faceBg.setColor(RED)
+            faceBg.setStroke(0, Color.TRANSPARENT)
+            if (paused) faceBg.setColor(PAUSED_GREY) // paused: the whole bubble says so, not just the small button
         } else {
             face.setImageResource(R.drawable.logo)
             face.scaleType = ImageView.ScaleType.CENTER_CROP
             faceBg.setColor(Color.WHITE)
+            faceBg.setStroke(dp(1), OUTLINE) // a hairline, so the white bubble shows on white screens
         }
+        pauseBg.setColor(if (paused) GREEN else PAUSED_GREY)
         pauseButton.setImageResource(if (paused) R.drawable.fa_ic_play else R.drawable.fa_ic_pause)
         val wantPause = running && shown && parked == null
         if (wantPause && !pauseShown) {
@@ -193,7 +199,7 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
 
     private fun placePause(update: Boolean = true) {
         pauseParams.x = params.x + (size - pauseSize) / 2
-        pauseParams.y = params.y + size + dp(4)
+        pauseParams.y = params.y + size + dp(12) // a clear gap, so Stop and Pause are not mixed up
         if (update && pauseShown) runCatching { wm.updateViewLayout(pauseButton, pauseParams) }
     }
 
@@ -220,6 +226,10 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
             chat.minimize()
             return
         }
+        openChat()
+    }
+
+    private fun openChat() {
         springX.cancel()
         springY.cancel()
         parked = params.x to params.y
@@ -323,7 +333,8 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
                 RunStatus.STOPPED -> "Stopped"
                 RunStatus.FAILED -> "Failed"
             }
-            Toast.makeText(service, "$label: ${result.take(120)}", Toast.LENGTH_LONG).show()
+            val text = if (status == RunStatus.STOPPED || result.isBlank()) label else "$label: ${result.take(120)}"
+            Toast.makeText(service, text, Toast.LENGTH_LONG).show()
         }
     }.let {}
 
@@ -337,6 +348,14 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
         private var startY = 0
         private var dragging = false
         private var magnet = false
+        private var held = false // long-pressed: while a task runs this opens the chat instead of stopping
+        private val hold = Runnable {
+            if (!dragging && runningUuid != null && parked == null) {
+                held = true
+                bubble.animate().scaleX(1f).scaleY(1f).setDuration(90).start()
+                openChat()
+            }
+        }
 
         override fun onTouch(v: View, e: MotionEvent): Boolean {
             val tracker = velocity ?: VelocityTracker.obtain().also { velocity = it }
@@ -348,16 +367,25 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
                     downX = e.rawX; downY = e.rawY; startX = params.x; startY = params.y
                     dragging = false
                     magnet = false
+                    held = false
+                    main.postDelayed(hold, LONG_PRESS_MS)
                     bubble.animate().scaleX(0.9f).scaleY(0.9f).setDuration(90).start() // picked up
                 }
                 MotionEvent.ACTION_MOVE -> {
                     if (!dragging && parked == null && hypot(e.rawX - downX, e.rawY - downY) > slop) {
                         dragging = true
+                        main.removeCallbacks(hold)
                         showClose(true)
                     }
                     if (dragging) follow(e)
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    main.removeCallbacks(hold)
+                    if (held) { // the long-press already opened the chat
+                        tracker.recycle()
+                        velocity = null
+                        return true
+                    }
                     bubble.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
                     tracker.computeCurrentVelocity(1000)
                     val vx = tracker.xVelocity
@@ -443,6 +471,10 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
         private const val FLING_PX_S = 900f
         private const val FLING_CARRY = 0.12f // how far a vertical fling carries the bubble
         private const val TOUCH_PAD_DP = 12
+        private const val LONG_PRESS_MS = 450L
+        private val PAUSED_GREY = Color.parseColor("#6E7A72")
+        private val GREEN = Color.parseColor("#12904F")
+        private val OUTLINE = Color.parseColor("#26000000")
         private val RED = Color.parseColor("#E0463A")
 
         @Volatile
@@ -470,6 +502,27 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
             )
             AgentRuntime.host()?.running()?.let { uuid -> bubble.main.post { bubble.runningUuid = uuid; bubble.render() } }
             bubble.refresh()
+        }
+
+        /** From the app's Chats screen: open this chat in the bubble (null = a new chat). False when there is no bubble. */
+        fun openChat(chatId: String?): Boolean {
+            val b = instance ?: return false
+            if (!enabled(b.service)) return false
+            b.main.post {
+                b.chat.show(chatId)
+                if (b.shown && !b.chat.isOpen && b.parked == null) b.openChat()
+            }
+            return true
+        }
+
+        /** The foreground app changed (Home, Recents, another app): fold the chat away like Messenger. */
+        fun foreground(packageName: String) {
+            val b = instance ?: return
+            b.main.post {
+                val before = b.foregroundApp
+                b.foregroundApp = packageName
+                if (before != null && before != packageName && packageName != b.service.packageName && b.chat.isOpen) b.chat.minimize()
+            }
         }
 
         fun detach() {

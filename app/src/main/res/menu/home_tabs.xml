@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:id="@+id/tab_home" android:icon="@drawable/fa_ic_home" android:title="Home" />
+    <item android:id="@+id/tab_chats" android:icon="@drawable/fa_ic_chat" android:title="Chats" />
     <item android:id="@+id/tab_tasks" android:icon="@drawable/fa_ic_list" android:title="Tasks" />
     <item android:id="@+id/tab_settings" android:icon="@drawable/fa_ic_tune" android:title="Settings" />
 </menu>

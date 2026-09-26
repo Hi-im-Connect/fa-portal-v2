@@ -48,6 +48,15 @@ class AgentLoop(
                 sink.event("phase", "Thinking", steps)
                 val reply = llm.complete(spec.executorModel, executorMessages(screen, goals), spec.prompts.tools)
                 steps++
+                // Stop or Pause pressed while the AI was thinking: never act on that answer. After a pause the
+                // user may have changed the screen, so look again and ask again.
+                if (stopRequested) return Result(RunStatus.STOPPED, "Stopped", steps)
+                if (paused) {
+                    waitWhilePaused(steps)
+                    if (stopRequested) return Result(RunStatus.STOPPED, "Stopped", steps)
+                    screen = observe() ?: screen
+                    continue
+                }
                 val (key, outcome) = when (reply) {
                     is LlmReply.Text -> "text" to ActionOutcome(false, "The model answered without choosing an action: ${reply.text.take(200)}")
                     is LlmReply.Tool -> {

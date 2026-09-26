@@ -162,4 +162,30 @@ class AgentLoopTest {
         val content = transport.requests.first().second.getJSONArray("messages").getJSONObject(1).getJSONArray("content")
         assertEquals("data:image/jpeg;base64,SHOT", content.getJSONObject(1).getJSONObject("image_url").getString("url"))
     }
+
+    @Test
+    fun `a stop that comes while the AI is thinking does not do the chosen action`() {
+        lateinit var agent: AgentLoop
+        val phone = FakePhone(state)
+        val transport = LlmTransport { _, _, _, _ -> agent.stopRequested = true; toolReply("tap", """{"index":1}""") }
+        agent = AgentLoop(spec(), phone, LlmClient(transport, "u", { "k" }, {}), sink)
+        assertEquals(RunStatus.STOPPED, agent.run().status)
+        assertTrue(phone.done.none { it.startsWith("tap") })
+    }
+
+    @Test
+    fun `a pause that comes while the AI is thinking drops that answer and looks again`() {
+        lateinit var agent: AgentLoop
+        val phone = FakePhone(state)
+        var calls = 0
+        val transport = LlmTransport { _, _, _, _ ->
+            calls++
+            if (calls == 1) { agent.paused = true; toolReply("tap", """{"index":1}""") } else toolReply("done", """{"success":true,"answer":"ok"}""")
+        }
+        phone.onSleep = { if (agent.paused) agent.paused = false }
+        agent = AgentLoop(spec(), phone, LlmClient(transport, "u", { "k" }, {}), sink)
+        assertEquals(RunStatus.SUCCEEDED, agent.run().status)
+        assertEquals(2, calls)
+        assertTrue(phone.done.none { it.startsWith("tap") })
+    }
 }

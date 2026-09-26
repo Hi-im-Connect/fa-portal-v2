@@ -1,15 +1,17 @@
 package com.mobilerun.portal.ui.home
 
 /** What a new phone still needs before it can run tasks. */
-enum class Step { NOTIFICATIONS, BATTERY, ACCESSIBILITY, DASHBOARD }
+enum class Step { NOTIFICATIONS, BATTERY, ACCESSIBILITY, OVERLAY, DASHBOARD }
 
-data class SetupState(val linked: Boolean, val notifications: Boolean, val battery: Boolean, val accessibility: Boolean)
+/** overlay = "Display over other apps": the chat then sits under the system's gesture bar and back arrow, like Messenger. */
+data class SetupState(val linked: Boolean, val notifications: Boolean, val battery: Boolean, val accessibility: Boolean, val overlay: Boolean)
 
 object SetupSteps {
     fun missing(s: SetupState): List<Step> = buildList {
         if (!s.notifications) add(Step.NOTIFICATIONS)
         if (!s.battery) add(Step.BATTERY)
         if (!s.accessibility) add(Step.ACCESSIBILITY)
+        if (!s.overlay) add(Step.OVERLAY)
         if (!s.linked) add(Step.DASHBOARD)
     }
 
