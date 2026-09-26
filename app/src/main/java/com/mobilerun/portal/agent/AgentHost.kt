@@ -105,7 +105,7 @@ class AgentHost(
                 .put("reasoning", spec.reasoning).put("max_steps", spec.maxSteps))
         }
         runner(Runnable { finish(spec, control, loop, seq, leaveApp) })
-        return ApiResponse.RawObject(JSONObject().put("accepted", true))
+        return ApiResponse.RawObject(JSONObject().put("accepted", true).put("uuid", spec.uuid))
     }
 
     /** The app's own Run (Home or bubble): the last settings the dashboard sent (or the bundled ones).
@@ -117,6 +117,15 @@ class AgentHost(
         if (reasoning != null) json.put("reasoning", reasoning)
         if (maxSteps != null) json.put("max_steps", maxSteps)
         return start(RunSpec.fromJson(json), announce = true, leaveApp = leaveApp)
+    }
+
+    /** The chat layer's AI: the dashboard's planner model, paid with this phone's own key. */
+    fun brain(): ChatBrain? {
+        val key = vault.key() ?: return null
+        val saved = defaultsFile?.takeIf { it.exists() }?.readText() ?: bundledDefaults() ?: return null
+        val json = JSONObject(saved)
+        val baseUrl = json.optString("base_url", "https://openrouter.ai/api/v1").trimEnd('/')
+        return ChatBrain(LlmClient(transport, baseUrl, { key }), json.optString("planner_model", DEFAULT_CHAT_MODEL))
     }
 
     private fun saveDefaults(params: JSONObject) {
@@ -197,6 +206,7 @@ class AgentHost(
         const val SHOT_QUALITY = 60
         const val LEAVE_APP_MS = 800L
         const val INTERRUPTED_SEQ = 999_999
+        const val DEFAULT_CHAT_MODEL = "google/gemini-2.5-flash"
     }
 }
 
@@ -208,18 +218,22 @@ object AgentRuntime {
     @Volatile
     private var store: RunStore? = null
 
+    @Volatile
+    private var chats: ChatStore? = null
+
     @Synchronized
     fun init(context: Context) {
         if (host != null) return
         val dir = File(context.filesDir, "agent").apply { mkdirs() }
         val runs = RunStore(File(dir, "runs"))
         store = runs
+        chats = ChatStore(File(dir, "chats.json"))
         host = AgentHost(
             outbox = Outbox(File(dir, "outbox.json")),
             vault = KeyVault(File(dir, "key.json"), KeystoreSecretBox()),
             phone = {
                 MobilerunAccessibilityService.getInstance()?.let { service ->
-                    OverlayShy(DispatcherPhoneControl { service.getActionDispatcher() }) { hidden -> overlayHider(hidden) }
+                    OverlayShy(DispatcherPhoneControl { service.getActionDispatcher() }, { x, y -> overlayCovers(x, y) }) { hidden -> overlayHider(hidden) }
                 }
             },
             transport = OkHttpTransport(),
@@ -240,7 +254,13 @@ object AgentRuntime {
     @Volatile
     var overlayHider: (Boolean) -> Unit = {}
 
+    /** Set by the floating bubble: is this screen point on it (so a tap there needs it out of the way)? */
+    @Volatile
+    var overlayCovers: (Int, Int) -> Boolean = { _, _ -> false }
+
     fun store(): RunStore? = store
+
+    fun chats(): ChatStore? = chats
 
     fun keyHash(): String = host?.keyHash().orEmpty()
 

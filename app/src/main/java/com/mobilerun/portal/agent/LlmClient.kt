@@ -46,10 +46,10 @@ class LlmClient(
     private val apiKey: () -> String?,
     private val sleep: (Long) -> Unit = { Thread.sleep(it) },
 ) {
-    fun complete(model: String, messages: JSONArray, tools: JSONArray?, maxTokens: Int = 1024): LlmReply {
+    fun complete(model: String, messages: JSONArray, tools: JSONArray?, maxTokens: Int = 1024, toolChoice: String = "required"): LlmReply {
         val key = apiKey() ?: throw LlmError("This phone has no AI key yet: keep it connected to the dashboard for a moment.")
         val body = JSONObject().put("model", model).put("messages", messages).put("max_tokens", maxTokens)
-        if (tools != null) body.put("tools", tools).put("tool_choice", "required")
+        if (tools != null) body.put("tools", tools).put("tool_choice", toolChoice)
         val headers = mapOf("Authorization" to "Bearer $key", "Content-Type" to "application/json", "X-Title" to "FastAutomate v2")
         var attempt = 0
         while (true) {

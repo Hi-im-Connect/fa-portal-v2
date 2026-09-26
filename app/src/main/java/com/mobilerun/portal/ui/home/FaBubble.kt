@@ -1,8 +1,11 @@
 package com.mobilerun.portal.ui.home
 
 import android.accessibilityservice.AccessibilityService
+import android.app.KeyguardManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
@@ -38,11 +41,11 @@ import kotlin.math.hypot
  * The round FastAutomate bubble, a Messenger-style chat head. Drawn by the accessibility service
  * (TYPE_ACCESSIBILITY_OVERLAY), so it needs no "display over other apps" permission. Moves on
  * springs like Messenger's (Rebound-style physics): flings to the nearest edge, pops in, and is
- * pulled onto the X when dragged near it. Tap = it springs to the top and the chat opens under it
- * (ChatPanelActivity); tap again = the chat minimizes. While a task runs it turns red with a stop
- * sign (tap = stop) and a small grey pause/play button hangs under it.
+ * pulled onto the X when dragged near it. Tap = the chat (FaChat) grows out of it, right where it is;
+ * tap again = the chat folds back in. While a task runs it turns red with a stop sign (tap = stop)
+ * and a small grey pause/play button hangs under it. Hidden on the lock screen.
  */
-class FaBubble private constructor(private val service: AccessibilityService) : RunListener {
+class FaBubble private constructor(private val service: AccessibilityService) : RunListener, FaChat.Bubble {
     private val main = Handler(Looper.getMainLooper())
     private val wm = service.getSystemService(WindowManager::class.java)
     private val density = service.resources.displayMetrics.density
@@ -54,10 +57,6 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
         indeterminateTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#12904F"))
         visibility = View.GONE
     }
-    private val badge = View(service).apply {
-        background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(GREEN); setStroke(dp(2), Color.WHITE) }
-        elevation = dp(9).toFloat()
-    }
     private val faceBg = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.WHITE) }
     private val face = ImageView(service).apply { // the logo fills the circle, like a profile photo
         setImageResource(R.drawable.logo)
@@ -65,12 +64,10 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
         background = faceBg
         clipToOutline = true
         outlineProvider = ViewOutlineProvider.BACKGROUND
-        elevation = dp(8).toFloat()
     }
     private val bubble = FrameLayout(service).apply {
         addView(ring, FrameLayout.LayoutParams(size, size))
         addView(face, FrameLayout.LayoutParams(size - dp(10), size - dp(10), Gravity.CENTER))
-        addView(badge, FrameLayout.LayoutParams(dp(16), dp(16), Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, dp(4), dp(4)) })
     }
     private val params = overlayParams(size, size).apply { x = 0; y = dp(220) }
 
@@ -80,7 +77,6 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
         setImageResource(R.drawable.fa_ic_pause)
         scaleType = ImageView.ScaleType.CENTER
         background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#6E7A72")) }
-        elevation = dp(6).toFloat()
         setOnClickListener { togglePause() }
     }
     private val pauseParams = overlayParams(pauseSize, pauseSize)
@@ -105,6 +101,22 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
     private var runningUuid: String? = null
     private var hiddenForAgent = false
     private var parked: Pair<Int, Int>? = null // where the bubble was before the chat opened
+    private var locked = false
+    private val chat = FaChat(service, this)
+
+    // the bubble's offset between window coordinates and the screen, for the agent's hit test
+    @Volatile
+    private var offset = 0 to 0
+
+    private val screenWatch = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            locked = intent.action != Intent.ACTION_USER_PRESENT && isLocked()
+            if (locked) chat.closeNow()
+            refresh()
+        }
+    }
+
+    private fun isLocked() = service.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
     private val restore = Runnable { setAgentHidden(false, now = true) }
 
     private fun overlayParams(w: Int, h: Int) = WindowManager.LayoutParams(
@@ -129,16 +141,18 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
 
     // ---- showing ---------------------------------------------------------------------------
     fun refresh() = main.post {
-        val want = enabled(service)
+        val want = enabled(service) && !locked // never on the lock screen
         if (want && !shown) {
             runCatching { wm.addView(bubble, params) }.onSuccess {
                 shown = true
                 bubble.scaleX = 0f
                 bubble.scaleY = 0f
                 pop(bubble) // pops in
+                bubble.post { measureOffset() }
             }
             bubble.setOnTouchListener(DragHandler())
         } else if (!want && shown) {
+            chat.closeNow()
             runCatching { wm.removeView(bubble) }
             shown = false
         }
@@ -157,7 +171,6 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
         val running = runningUuid != null
         val paused = AgentRuntime.host()?.isPaused() == true
         ring.visibility = if (running && !paused) View.VISIBLE else View.GONE
-        badge.visibility = if (running) View.GONE else View.VISIBLE
         if (running) { // red, with a stop sign: tap it to stop
             face.setImageResource(R.drawable.fa_ic_stop)
             face.scaleType = ImageView.ScaleType.CENTER
@@ -204,27 +217,62 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
             return
         }
         if (parked != null) { // open: tapping the bubble again minimizes it, like Messenger
-            ChatPanelActivity.minimize()
+            chat.minimize()
             return
         }
+        springX.cancel()
+        springY.cancel()
         parked = params.x to params.y
-        val m = service.resources.displayMetrics
-        springTo(m.widthPixels - size - dp(12), dp(24)) // up to the top; the chat then moves it onto its slot
-        service.startActivity(Intent(service, ChatPanelActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        render() // the pause button steps away while the chat is open
+        chat.open() // the chat grows out of the bubble and moves it onto its slot
     }
 
-    /** The chat asks the bubble to sit exactly on its head slot (screen coordinates). */
-    private fun dockAt(screenX: Int, screenY: Int) {
+    private fun measureOffset() {
         val now = IntArray(2).also { bubble.getLocationOnScreen(it) }
-        val offsetX = now[0] - params.x
-        val offsetY = now[1] - params.y
-        springTo(screenX - offsetX, screenY - offsetY)
+        offset = (now[0] - params.x) to (now[1] - params.y)
     }
 
-    private fun chatClosed() {
+    // ---- what the chat needs from the bubble ---------------------------------------------------
+    override fun center(): Pair<Int, Int> = (params.x + offset.first + size / 2) to (params.y + offset.second + size / 2)
+
+    override fun home(): Pair<Int, Int> {
+        val (x, y) = parked ?: (params.x to params.y)
+        return (x + offset.first + size / 2) to (y + offset.second + size / 2)
+    }
+
+    /** Sit exactly on the chat's head slot (screen coordinates). */
+    override fun dockAt(screenX: Int, screenY: Int) {
+        measureOffset()
+        springTo(screenX - offset.first, screenY - offset.second)
+    }
+
+    /** The chat window was just added above: put the bubble back on top of it. */
+    override fun raise() {
+        if (!shown) return
+        runCatching { wm.removeView(bubble) }
+        runCatching { wm.addView(bubble, params) }
+    }
+
+    override fun closed() {
         val (x, y) = parked ?: return
         parked = null
         springTo(x, y)
+        main.postDelayed({ render() }, 200) // the pause button comes back once the bubble is home
+    }
+
+    override fun changed() {
+        main.post { render() }
+    }
+
+    /** For the agent (any thread): would a touch at this screen point land on the bubble or its pause button? */
+    fun covers(x: Int, y: Int): Boolean {
+        if (!shown) return false
+        val pad = dp(TOUCH_PAD_DP)
+        val (ox, oy) = offset
+        val onBubble = x in params.x + ox - pad..params.x + ox + size + pad && y in params.y + oy - pad..params.y + oy + size + pad
+        val onPause = pauseShown &&
+            x in pauseParams.x + ox - pad..pauseParams.x + ox + pauseSize + pad && y in pauseParams.y + oy - pad..pauseParams.y + oy + pauseSize + pad
+        return onBubble || onPause
     }
 
     /** Called from the agent's thread: hide before it looks or touches, come back a moment after. */
@@ -261,14 +309,15 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
     }
 
     // ---- run updates -----------------------------------------------------------------------
-    override fun started(spec: RunSpec, origin: String) = main.post { runningUuid = spec.uuid; render() }.let {}
+    override fun started(spec: RunSpec, origin: String) = main.post { runningUuid = spec.uuid; render(); chat.render() }.let {}
 
-    override fun event(uuid: String, kind: String, text: String, steps: Int?) = main.post { render() }.let {}
+    override fun event(uuid: String, kind: String, text: String, steps: Int?) = main.post { render(); chat.render() }.let {}
 
     override fun finished(uuid: String, status: RunStatus, result: String, steps: Int, shot: String?) = main.post {
         runningUuid = null
         render()
-        if (parked == null) { // the chat is closed: say how it went
+        chat.render()
+        if (!chat.isOpen) { // the chat is closed: say how it went
             val label = when (status) {
                 RunStatus.SUCCEEDED -> "Done"
                 RunStatus.STOPPED -> "Stopped"
@@ -393,7 +442,7 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
         private const val DAMPING = 0.68f
         private const val FLING_PX_S = 900f
         private const val FLING_CARRY = 0.12f // how far a vertical fling carries the bubble
-        private val GREEN = Color.parseColor("#43C57F")
+        private const val TOUCH_PAD_DP = 12
         private val RED = Color.parseColor("#E0463A")
 
         @Volatile
@@ -413,6 +462,12 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
             instance = bubble
             AgentRuntime.host()?.addListener(bubble)
             AgentRuntime.overlayHider = { hidden -> bubble.setAgentHidden(hidden) }
+            AgentRuntime.overlayCovers = { x, y -> bubble.covers(x, y) }
+            bubble.locked = bubble.isLocked()
+            service.registerReceiver(
+                bubble.screenWatch,
+                IntentFilter().apply { addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_USER_PRESENT) },
+            )
             AgentRuntime.host()?.running()?.let { uuid -> bubble.main.post { bubble.runningUuid = uuid; bubble.render() } }
             bubble.refresh()
         }
@@ -421,28 +476,16 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
             val bubble = instance ?: return
             instance = null
             AgentRuntime.overlayHider = {}
+            AgentRuntime.overlayCovers = { _, _ -> false }
             AgentRuntime.host()?.removeListener(bubble)
+            runCatching { bubble.service.unregisterReceiver(bubble.screenWatch) }
             bubble.main.post {
+                bubble.chat.closeNow()
                 if (bubble.shown) runCatching { bubble.wm.removeView(bubble.bubble) }
                 if (bubble.pauseShown) runCatching { bubble.wm.removeView(bubble.pauseButton) }
                 bubble.shown = false
                 bubble.pauseShown = false
             }
-        }
-
-        /** The chat's head slot is at this screen point: the bubble springs onto it. */
-        fun dockAt(screenX: Int, screenY: Int) {
-            instance?.let { b -> b.main.post { b.dockAt(screenX, screenY) } }
-        }
-
-        /** The chat closed: the bubble springs back where it was. */
-        fun chatClosed() {
-            instance?.let { b -> b.main.post { b.chatClosed() } }
-        }
-
-        /** Pause/resume from the chat: update the ring and the dot. */
-        fun changed() {
-            instance?.let { b -> b.main.post { b.render() } }
         }
     }
 }

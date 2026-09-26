@@ -115,6 +115,7 @@ class AgentLoop(
             if (goals.isNotEmpty()) append("\nPlan:\n").append(goals.mapIndexed { i, g -> "${i + 1}. $g" }.joinToString("\n")).append('\n')
             if (history.isNotEmpty()) append("\nRecent actions:\n").append(history.joinToString("\n")).append('\n')
             append("\nCurrent screen:\n").append(ScreenReader.describe(screen))
+            if (screen.screenshotBase64 != null) append('\n').append(BUBBLE_NOTE)
         }
         val content = JSONArray().put(JSONObject().put("type", "text").put("text", text))
         screen.screenshotBase64?.let {
@@ -138,5 +139,6 @@ class AgentLoop(
         const val STUCK = 3
         const val VISION_SIDE = 960
         const val VISION_QUALITY = 60
+        const val BUBBLE_NOTE = "The round FastAutomate bubble floating in the screenshot (red with a stop sign) is not part of the app: ignore it."
     }
 }

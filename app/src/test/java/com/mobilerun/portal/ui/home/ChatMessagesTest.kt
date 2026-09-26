@@ -1,5 +1,7 @@
 package com.mobilerun.portal.ui.home
 
+import com.mobilerun.portal.agent.Chat
+import com.mobilerun.portal.agent.ChatLine
 import com.mobilerun.portal.agent.RunEvent
 import com.mobilerun.portal.agent.RunRecord
 import org.junit.Assert.assertEquals
@@ -7,32 +9,31 @@ import org.junit.Test
 
 class ChatMessagesTest {
     private fun record(status: String, result: String, vararg events: Pair<String, String>) = RunRecord(
-        "u", "open settings", "app", status, "t", null, 3, result, events.map { RunEvent(it.first, it.second, "t") },
+        "r", "open settings", "app", status, "t", null, 3, result, events.map { RunEvent(it.first, it.second, "t") },
     )
 
+    private fun chat(vararg lines: ChatLine) = Chat("c", lines.toList())
+
+    private fun of(r: RunRecord?) = ChatMessages.of(chat(ChatLine("task", "open settings", run = "r", ts = 1))) { r }.single()
+
     @Test
-    fun `a finished task is your message and one result`() {
-        val r = record(
-            "succeeded", "Android 16",
-            "plan" to "1. Settings is open", "action" to "tap index=6", "ok" to "Tapped \"Settings\"", "answer" to "Android 16",
-        )
-        assertEquals(
-            listOf(ChatMessage(true, "open settings", Tone.USER), ChatMessage(false, "Done · 3 steps\nAndroid 16", Tone.GOOD)),
-            ChatMessages.of(listOf(r)),
-        )
+    fun `you on the right, the assistant on the left`() {
+        val c = chat(ChatLine("user", "hi", ts = 1), ChatLine("assistant", "Hello!", ts = 2))
+        assertEquals(listOf(ChatMessage(true, "hi", Tone.USER), ChatMessage(false, "Hello!", Tone.STEP)), ChatMessages.of(c) { null })
     }
 
     @Test
-    fun `a running task shows its latest steps`() {
-        val r = record("running", "", "plan" to "1. a", "ok" to "one", "error" to "two", "ok" to "three", "ok" to "four", "action" to "tap")
-        assertEquals(listOf("open settings", "two", "three", "four"), ChatMessages.of(listOf(r)).map { it.text })
-        assertEquals(ChatMessage(false, "Working...", Tone.STEP), ChatMessages.of(listOf(record("running", ""))).last())
-        assertEquals(ChatMessage(false, "Paused", Tone.STEP), ChatMessages.of(listOf(record("running", "", "paused" to "Paused"))).last())
+    fun `a finished task is one result`() {
+        assertEquals(ChatMessage(false, "Done · 3 steps\nAndroid 16", Tone.GOOD), of(record("succeeded", "Android 16", "ok" to "Tapped")))
+        assertEquals(ChatMessage(false, "Stopped · 3 steps", Tone.BAD), of(record("stopped", "Stopped")))
+        assertEquals(ChatMessage(false, "Failed · 3 steps\nno network", Tone.BAD), of(record("failed", "no network")))
     }
 
     @Test
-    fun `stopped and failed tasks say so`() {
-        assertEquals(ChatMessage(false, "Stopped · 3 steps", Tone.BAD), ChatMessages.of(listOf(record("stopped", "Stopped"))).last())
-        assertEquals(ChatMessage(false, "Failed · 3 steps\nno network", Tone.BAD), ChatMessages.of(listOf(record("failed", "no network"))).last())
+    fun `a running task shows only its latest step`() {
+        assertEquals(ChatMessage(false, "Working...\nthree", Tone.STEP), of(record("running", "", "ok" to "one", "error" to "two", "ok" to "three", "action" to "tap")))
+        assertEquals(ChatMessage(false, "Working...", Tone.STEP), of(record("running", "")))
+        assertEquals(ChatMessage(false, "Paused", Tone.STEP), of(record("running", "", "ok" to "one", "paused" to "Paused")))
+        assertEquals(ChatMessage(false, "Working...\none", Tone.STEP), of(record("running", "", "paused" to "Paused", "resumed" to "Resumed", "ok" to "one")))
     }
 }

@@ -233,15 +233,6 @@
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".ui.home.ChatPanelActivity"
-            android:exported="false"
-            android:excludeFromRecents="true"
-            android:launchMode="singleTask"
-            android:taskAffinity=""
-            android:theme="@style/Theme.FaChat"
-            android:windowSoftInputMode="adjustResize|stateHidden" />
-
         <!-- Settings > Advanced: the developer screen (connection details, local server, logs). -->
         <activity
             android:name=".ui.MainActivity"

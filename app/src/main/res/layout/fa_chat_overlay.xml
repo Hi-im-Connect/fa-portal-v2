@@ -1,59 +1,70 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The bubble's chat panel (Messenger style): header, conversation, Pause/Stop while running, message box. -->
+<!-- The bubble's chat, drawn over the current app (an accessibility overlay, not an activity):
+     a soft dim, the chat heads row (the bubble docks on head_slot), a pointer, the card, and the X to drop a chat on. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:clipChildren="false">
+
+<View
     android:id="@+id/chat_scrim"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#99000000"
-    android:fitsSystemWindows="true">
+    android:background="#80000000" />
 
 <LinearLayout
+    android:id="@+id/chat_column"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
+    android:layout_height="wrap_content"
+    android:clipChildren="false"
     android:orientation="vertical">
 
-<!-- Messenger's top row: "+" for a new task, then the bubble (it springs onto head_slot) -->
+<!-- Messenger's heads row, centered: the bubble, one head per chat, then "+" for a new chat -->
 <LinearLayout
+    android:id="@+id/chat_heads"
     android:layout_width="match_parent"
-    android:layout_height="76dp"
-    android:gravity="end|center_vertical"
-    android:orientation="horizontal"
-    android:paddingEnd="12dp">
-
-    <ImageButton
-        android:id="@+id/chat_new"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:background="@drawable/fa_new_bg"
-        android:contentDescription="New task"
-        android:elevation="6dp"
-        android:src="@drawable/fa_ic_plus" />
+    android:layout_height="64dp"
+    android:clipChildren="false"
+    android:gravity="center"
+    android:orientation="horizontal">
 
     <View
         android:id="@+id/head_slot"
         android:layout_width="60dp"
-        android:layout_height="60dp"
-        android:layout_marginStart="14dp" />
+        android:layout_height="60dp" />
+
+    <LinearLayout
+        android:id="@+id/chat_head_list"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:clipChildren="false"
+        android:gravity="center_vertical"
+        android:orientation="horizontal" />
+
+    <ImageButton
+        android:id="@+id/chat_new"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_marginStart="10dp"
+        android:background="@drawable/fa_new_bg"
+        android:contentDescription="New chat"
+        android:src="@drawable/fa_ic_plus" />
 </LinearLayout>
 
 <ImageView
     android:id="@+id/chat_pointer"
     android:layout_width="20dp"
     android:layout_height="10dp"
-    android:layout_gravity="end"
-    android:layout_marginEnd="32dp"
     android:contentDescription="@null"
     android:src="@drawable/fa_pointer" />
 
-<!-- the card: under the bubble, down to just above the keyboard -->
+<!-- the card: under the heads; its height is set in code (shorter while the keyboard is up) -->
 <LinearLayout
     android:id="@+id/chat_root"
     android:layout_width="match_parent"
-    android:layout_height="0dp"
-    android:layout_weight="1"
-    android:layout_marginHorizontal="8dp"
-    android:layout_marginBottom="12dp"
+    android:layout_height="420dp"
+    android:layout_marginHorizontal="10dp"
     android:background="@drawable/fa_chat_bg"
     android:clickable="true"
     android:focusable="false"
@@ -85,6 +96,9 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:fontFamily="@font/geist_sans"
+                android:id="@+id/chat_title"
+                android:ellipsize="end"
+                android:maxLines="1"
                 android:text="FastAutomate"
                 android:textColor="@color/mobilerun_foreground"
                 android:textSize="16sp"
@@ -192,4 +206,17 @@
     </LinearLayout>
 </LinearLayout>
 </LinearLayout>
+
+<TextView
+    android:id="@+id/chat_trash"
+    android:layout_width="72dp"
+    android:layout_height="72dp"
+    android:layout_gravity="bottom|center_horizontal"
+    android:layout_marginBottom="48dp"
+    android:alpha="0"
+    android:background="@drawable/fa_trash_bg"
+    android:gravity="center"
+    android:text="✕"
+    android:textColor="#FFFFFF"
+    android:textSize="22sp" />
 </FrameLayout>
