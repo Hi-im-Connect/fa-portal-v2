@@ -27,8 +27,13 @@ class AgentHost(
     private val defaultsFile: File? = null,
     private val bundledDefaults: () -> String? = { null },
 ) {
-    @Volatile
-    var listener: RunListener? = null
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<RunListener>()
+
+    fun addListener(listener: RunListener) { listeners += listener }
+
+    fun removeListener(listener: RunListener) { listeners -= listener }
+
+    private fun tell(block: (RunListener) -> Unit) = listeners.forEach { runCatching { block(it) } }
 
     @Volatile
     private var current: Pair<String, AgentLoop>? = null
@@ -63,6 +68,13 @@ class AgentHost(
                 ApiResponse.RawObject(JSONObject().put("stopping", true))
             }
         }
+        "agent/pause", "agent/resume" -> {
+            if (setPaused(params.optString("uuid"), method == "agent/pause")) {
+                ApiResponse.RawObject(JSONObject().put("paused", method == "agent/pause"))
+            } else {
+                ApiResponse.Error("This phone is not running that task")
+            }
+        }
         "agent/ack" -> {
             outbox.ack(params.optString("uuid"), params.optInt("seq", -1))
             ApiResponse.RawObject(JSONObject().put("ok", true))
@@ -70,7 +82,7 @@ class AgentHost(
         else -> ApiResponse.Error("Unknown agent method $method")
     }
 
-    fun start(spec: RunSpec, announce: Boolean): ApiResponse {
+    fun start(spec: RunSpec, announce: Boolean, leaveApp: Boolean = announce): ApiResponse {
         val control = phone() ?: return ApiResponse.Error(DispatcherPhoneControl.NO_SERVICE)
         val key = vault.key() ?: return ApiResponse.Error(
             "This phone has no AI key yet. Add the OpenRouter management key in the dashboard Settings and keep the phone connected.",
@@ -80,34 +92,45 @@ class AgentHost(
             val params = JSONObject().put("kind", kind).put("text", text)
             if (steps != null) params.put("steps", steps)
             post("agent/event", spec.uuid, seq.incrementAndGet(), params)
-            listener?.event(spec.uuid, kind, text, steps)
+            tell { it.event(spec.uuid, kind, text, steps) }
         }
         val loop = AgentLoop(spec, control, LlmClient(transport, spec.baseUrl, { key }), sink, clock)
         synchronized(this) {
             if (current != null) return ApiResponse.Error("This phone is already running a task")
             current = spec.uuid to loop
         }
-        listener?.started(spec, if (announce) "app" else "dashboard")
+        tell { it.started(spec, if (announce) "app" else "dashboard") }
         if (announce) {
             post("agent/started", spec.uuid, 0, JSONObject().put("instruction", spec.instruction)
                 .put("reasoning", spec.reasoning).put("max_steps", spec.maxSteps))
         }
-        runner(Runnable { finish(spec, control, loop, seq, fromApp = announce) })
+        runner(Runnable { finish(spec, control, loop, seq, leaveApp) })
         return ApiResponse.RawObject(JSONObject().put("accepted", true))
     }
 
-    /** The app's own Run button: the last settings the dashboard sent (or the bundled ones). */
-    fun startLocal(instruction: String, reasoning: Boolean?, maxSteps: Int?): ApiResponse {
+    /** The app's own Run (Home or bubble): the last settings the dashboard sent (or the bundled ones).
+     *  leaveApp: started from FastAutomate's own screen, which the agent cannot read, so go Home first. */
+    fun startLocal(instruction: String, reasoning: Boolean?, maxSteps: Int?, leaveApp: Boolean = true): ApiResponse {
         val saved = defaultsFile?.takeIf { it.exists() }?.readText() ?: bundledDefaults()
             ?: return ApiResponse.Error("Connect this phone to the dashboard once first")
         val json = JSONObject(saved).put("uuid", java.util.UUID.randomUUID().toString()).put("instruction", instruction.trim())
         if (reasoning != null) json.put("reasoning", reasoning)
         if (maxSteps != null) json.put("max_steps", maxSteps)
-        return start(RunSpec.fromJson(json), announce = true)
+        return start(RunSpec.fromJson(json), announce = true, leaveApp = leaveApp)
     }
 
     private fun saveDefaults(params: JSONObject) {
         defaultsFile?.writeText(JSONObject(params.toString()).apply { remove("uuid"); remove("instruction") }.toString())
+    }
+
+    fun isPaused(): Boolean = current?.second?.paused == true
+
+    /** Pause or resume the running task (an empty uuid means whichever is running). */
+    fun setPaused(uuid: String, paused: Boolean): Boolean {
+        val (id, loop) = current ?: return false
+        if (uuid.isNotEmpty() && uuid != id) return false
+        loop.paused = paused
+        return true
     }
 
     fun stop(uuid: String) {
@@ -124,7 +147,7 @@ class AgentHost(
         for (uuid in uuids) {
             val result = "The app was restarted during this task"
             post("agent/finished", uuid, INTERRUPTED_SEQ, JSONObject().put("status", RunStatus.FAILED.wire).put("result", result).put("steps", 0))
-            listener?.finished(uuid, RunStatus.FAILED, result, 0, null)
+            tell { it.finished(uuid, RunStatus.FAILED, result, 0, null) }
         }
     }
 
@@ -141,8 +164,8 @@ class AgentHost(
         }
     }
 
-    private fun finish(spec: RunSpec, control: PhoneControl, loop: AgentLoop, seq: AtomicInteger, fromApp: Boolean) {
-        if (fromApp) { // started from FastAutomate's own screen, which the screen reader skips: leave it first
+    private fun finish(spec: RunSpec, control: PhoneControl, loop: AgentLoop, seq: AtomicInteger, leaveApp: Boolean) {
+        if (leaveApp) { // started from FastAutomate's own screen, which the screen reader skips: leave it first
             control.global(Actions.GLOBAL_HOME)
             control.sleep(LEAVE_APP_MS)
         }
@@ -156,7 +179,7 @@ class AgentHost(
             val params = JSONObject().put("status", result.status.wire).put("result", result.result).put("steps", result.steps)
             if (shot != null) params.put("shot", shot)
             runCatching { post("agent/finished", spec.uuid, seq.incrementAndGet(), params) }
-            runCatching { listener?.finished(spec.uuid, result.status, result.result, result.steps, shot) }
+            tell { it.finished(spec.uuid, result.status, result.result, result.steps, shot) }
         } finally {
             synchronized(this) { current = null }  // never leave the phone stuck as busy
         }
@@ -206,7 +229,7 @@ object AgentRuntime {
                 runCatching { context.assets.open("agent_defaults.json").bufferedReader().readText() }.getOrNull()
             },
         ).also {
-            it.listener = runs
+            it.addListener(runs)
             it.closeInterrupted(runs.running())  // runs the last process could not finish
         }
     }

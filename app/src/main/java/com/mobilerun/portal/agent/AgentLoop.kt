@@ -16,6 +16,12 @@ class AgentLoop(
     @Volatile
     var stopRequested = false
 
+    /** Pause between steps (bubble, Home or dashboard); paused time does not count toward the time limit. */
+    @Volatile
+    var paused = false
+
+    private var pausedMs = 0L
+
     private val actions = Actions(phone)
     private val planner = Planner(llm)
     private val history = ArrayDeque<String>()
@@ -33,8 +39,12 @@ class AgentLoop(
             var goals = if (spec.reasoning) plan(screen, emptyList()) else emptyList()
             while (true) {
                 if (stopRequested) return Result(RunStatus.STOPPED, "Stopped", steps)
+                if (paused) {
+                    waitWhilePaused(steps)
+                    if (stopRequested) return Result(RunStatus.STOPPED, "Stopped", steps)
+                }
                 if (steps >= spec.maxSteps) return Result(RunStatus.FAILED, "Reached the step limit (${spec.maxSteps}) before finishing", steps)
-                if (clock() - started > spec.timeLimitMs) return Result(RunStatus.FAILED, "Ran out of time", steps)
+                if (clock() - started - pausedMs > spec.timeLimitMs) return Result(RunStatus.FAILED, "Ran out of time", steps)
                 sink.event("phase", "Thinking", steps)
                 val reply = llm.complete(spec.executorModel, executorMessages(screen, goals), spec.prompts.tools)
                 steps++
@@ -79,6 +89,14 @@ class AgentLoop(
         }
     }
 
+    private fun waitWhilePaused(steps: Int) {
+        sink.event("paused", "Paused", steps)
+        val from = clock()
+        while (paused && !stopRequested) phone.sleep(PAUSE_POLL_MS)
+        pausedMs += clock() - from
+        if (!stopRequested) sink.event("resumed", "Resumed", steps)
+    }
+
     private fun plan(screen: Screen, trouble: List<String>): List<String> {
         val goals = planner.plan(spec, screen, trouble)
         sink.event("plan", goals.mapIndexed { i, g -> "${i + 1}. $g" }.joinToString("\n"), null)
@@ -114,6 +132,7 @@ class AgentLoop(
 
     companion object {
         const val SETTLE_MS = 700L
+        const val PAUSE_POLL_MS = 300L
         const val UNREADABLE = "Could not read the screen (is FastAutomate v2 switched on in Accessibility?)"
         const val HISTORY = 8
         const val STUCK = 3

@@ -7,6 +7,7 @@ class FakePhone(var state: JSONObject = JSONObject(), var shot: String? = "SHOT"
     val done = mutableListOf<String>()
     var failTaps = false
     var unreadable = false
+    var onSleep: (Long) -> Unit = {}
     var apps = listOf("Settings" to "com.android.settings", "Chrome" to "com.android.chrome")
 
     override fun readScreen() = if (unreadable) null else state
@@ -18,5 +19,5 @@ class FakePhone(var state: JSONObject = JSONObject(), var shot: String? = "SHOT"
     override fun global(action: Int): String? { done += "global $action"; return null }
     override fun launchableApps() = apps
     override fun launch(packageName: String): String? { done += "launch $packageName"; return null }
-    override fun sleep(ms: Long) { done += "sleep $ms" }
+    override fun sleep(ms: Long) { done += "sleep $ms"; onSleep(ms) }
 }

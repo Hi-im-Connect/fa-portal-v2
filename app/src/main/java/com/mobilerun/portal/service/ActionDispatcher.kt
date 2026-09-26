@@ -73,7 +73,7 @@ class ActionDispatcher(
                 action.removePrefix("/action/").removePrefix("action.").removePrefix("/")
         ) {
             // FastAutomate v2: the agent runs on this phone
-            "agent/run", "agent/stop", "agent/credentials", "agent/settings", "agent/ack" ->
+            "agent/run", "agent/stop", "agent/pause", "agent/resume", "agent/credentials", "agent/settings", "agent/ack" ->
                 com.mobilerun.portal.agent.AgentRuntime.handle(method, params)
 
             "tap" -> {

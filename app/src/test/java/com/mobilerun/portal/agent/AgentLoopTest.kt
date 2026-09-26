@@ -64,6 +64,40 @@ class AgentLoopTest {
     }
 
     @Test
+    fun `a paused run waits between steps and paused time does not count`() {
+        val transport = ScriptedTransport(toolReply("wait", """{"seconds":1}"""), toolReply("done", """{"success":true,"answer":"ok"}"""))
+        var now = 0L
+        val phone = FakePhone(state)
+        lateinit var agent: AgentLoop
+        var callsWhilePaused = -1
+        phone.onSleep = { ms ->
+            now += ms
+            if (agent.paused && now > 120_000) { // paused for two minutes, twice the time limit
+                callsWhilePaused = transport.requests.size
+                agent.paused = false
+            }
+        }
+        val pauser = EventSink { kind, text, _ -> events += kind to text; if (kind == "ok") agent.paused = true }
+        agent = AgentLoop(spec(), phone, LlmClient(transport, "u", { "k" }, {}), pauser, { now })
+        val result = agent.run()
+        assertEquals(RunStatus.SUCCEEDED, result.status)
+        assertEquals(1, callsWhilePaused)  // no AI call while paused
+        assertTrue(events.contains("paused" to "Paused"))
+        assertTrue(events.contains("resumed" to "Resumed"))
+    }
+
+    @Test
+    fun `stop works while paused`() {
+        val transport = ScriptedTransport(*Array(3) { toolReply("wait", """{"seconds":1}""") })
+        val phone = FakePhone(state)
+        lateinit var agent: AgentLoop
+        phone.onSleep = { if (agent.paused) agent.stopRequested = true }
+        val pauser = EventSink { kind, _, _ -> if (kind == "ok") agent.paused = true }
+        agent = AgentLoop(spec(), phone, LlmClient(transport, "u", { "k" }, {}), pauser)
+        assertEquals(RunStatus.STOPPED, agent.run().status)
+    }
+
+    @Test
     fun `three failures in a row make a new plan`() {
         val phone = FakePhone(state).apply { failTaps = true }
         val transport = ScriptedTransport(

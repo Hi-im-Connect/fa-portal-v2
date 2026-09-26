@@ -195,4 +195,40 @@ class AgentHostTest {
         val host = host(ScriptedTransport())
         assertTrue(host.handle("agent/stop", JSONObject().put("uuid", "nope")) is ApiResponse.Error)
     }
+
+    @Test
+    fun `pause and resume reach the running task and are refused for other tasks`() {
+        val host = host(ScriptedTransport(), direct = false)
+        credentials(host)
+        host.handle("agent/run", runParams("u1"))
+        assertTrue(host.handle("agent/pause", JSONObject().put("uuid", "u1")) !is ApiResponse.Error)
+        assertTrue(host.isPaused())
+        assertTrue(host.handle("agent/pause", JSONObject().put("uuid", "other")) is ApiResponse.Error)
+        assertTrue(host.handle("agent/resume", JSONObject().put("uuid", "u1")) !is ApiResponse.Error)
+        assertTrue(!host.isPaused())
+    }
+
+    @Test
+    fun `every listener hears the run and a bubble run does not press Home`() {
+        val phone = FakePhone(state)
+        val host = AgentHost(
+            outbox = Outbox(tmp.newFile()), vault = KeyVault(tmp.newFile(), box), phone = { phone },
+            transport = ScriptedTransport(toolReply("done", """{"success":true,"answer":"ok"}""")),
+            send = { sent += JSONObject(it); true }, runner = { it.run() },
+            defaultsFile = java.io.File(tmp.newFolder(), "defaults.json"),
+        )
+        host.handle("agent/settings", JSONObject().put("defaults", runParams().apply { remove("uuid"); remove("instruction") }))
+        credentials(host)
+        val heard = mutableListOf<String>()
+        repeat(2) { n ->
+            host.addListener(object : RunListener {
+                override fun started(spec: RunSpec, origin: String) { heard += "$n started $origin" }
+                override fun event(uuid: String, kind: String, text: String, steps: Int?) {}
+                override fun finished(uuid: String, status: RunStatus, result: String, steps: Int, shot: String?) { heard += "$n finished" }
+            })
+        }
+        assertTrue(host.startLocal("open settings", null, null, leaveApp = false) !is ApiResponse.Error)
+        assertEquals(listOf("0 started app", "1 started app", "0 finished", "1 finished"), heard)
+        assertTrue(phone.done.none { it == "global ${Actions.GLOBAL_HOME}" })
+    }
 }
