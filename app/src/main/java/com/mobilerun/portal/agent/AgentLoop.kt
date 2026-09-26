@@ -19,6 +19,7 @@ class AgentLoop(
     private val actions = Actions(phone)
     private val planner = Planner(llm)
     private val history = ArrayDeque<String>()
+    private val seenHere = HashMap<String, Int>()  // (screen, action) -> times chosen: catches back-and-forth loops
 
     fun run(): Result {
         val started = clock()
@@ -46,23 +47,26 @@ class AgentLoop(
                         description to actions.run(reply.call, screen)
                     }
                 }
+                val here = seenHere.merge(ScreenReader.describe(screen) + "|" + key, 1, Int::plus) ?: 1
                 if (outcome.done) {
                     if (outcome.answer.isNotBlank()) sink.event("answer", outcome.answer, steps)
                     val status = if (outcome.success) RunStatus.SUCCEEDED else RunStatus.FAILED
                     return Result(status, outcome.answer.ifBlank { if (outcome.success) "Done" else "The agent gave up" }, steps)
                 }
                 sink.event(if (outcome.ok) "ok" else "error", outcome.text, steps)
-                history.addLast("$steps. $key -> ${if (outcome.ok) "ok" else "failed"}: ${outcome.text}")
+                val repeat = if (here > 1) " (you already did this on this screen ${here - 1}x: try something else)" else ""
+                history.addLast("$steps. $key -> ${if (outcome.ok) "ok" else "failed"}: ${outcome.text}$repeat")
                 while (history.size > HISTORY) history.removeFirst()
                 failuresInRow = if (outcome.ok) 0 else failuresInRow + 1
                 sameInRow = if (key == lastKey) sameInRow + 1 else 1
                 lastKey = key
-                if (failuresInRow >= STUCK || sameInRow >= STUCK) {
+                if (failuresInRow >= STUCK || sameInRow >= STUCK || here >= STUCK) {
                     if (spec.reasoning) {
                         sink.event("phase", "Making a new plan", steps)
                         goals = plan(screen, history.toList())
                         failuresInRow = 0
                         sameInRow = 0
+                        seenHere.clear()
                     } else if (failuresInRow >= STUCK) {
                         return Result(RunStatus.FAILED, "Three actions in a row failed: ${outcome.text}", steps)
                     }

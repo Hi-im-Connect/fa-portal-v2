@@ -79,6 +79,25 @@ class AgentLoopTest {
     }
 
     @Test
+    fun `going back and forth between two actions on the same screen makes a new plan`() {
+        val transport = ScriptedTransport(
+            textReply("""{"goals":["Open the app drawer"]}"""),
+            toolReply("scroll", """{"direction":"up"}"""), toolReply("home", "{}"),
+            toolReply("scroll", """{"direction":"up"}"""), toolReply("home", "{}"),
+            toolReply("scroll", """{"direction":"up"}"""),
+            textReply("""{"goals":["Open Settings with open_app"]}"""),
+            toolReply("done", """{"success":true,"answer":"ok"}"""),
+        )
+        val result = loop(spec(reasoning = true), transport).run()
+        assertEquals(RunStatus.SUCCEEDED, result.status)
+        assertEquals(2, events.count { it.first == "plan" })
+        assertEquals("p/m", transport.requests[6].second.getString("model"))  // the replan came right after the loop
+        val lastExecutorPrompt = transport.requests[5].second.getJSONArray("messages").getJSONObject(1)
+            .getJSONArray("content").getJSONObject(0).getString("text")
+        assertTrue(lastExecutorPrompt, lastExecutorPrompt.contains("already did this on this screen"))
+    }
+
+    @Test
     fun `budget exhaustion fails the run`() {
         val transport = ScriptedTransport(HttpResult(403, """{"error":{"message":"Key limit exceeded"}}"""))
         val result = loop(spec(), transport).run()
