@@ -98,4 +98,52 @@ class AgentHostTest {
         assertEquals(0, first.getJSONObject("params").getInt("seq"))
         assertEquals("open settings", first.getJSONObject("params").getString("instruction"))
     }
+
+    @Test
+    fun `the app's own run uses the last settings from the dashboard`() {
+        val dir = tmp.newFolder()
+        val host = AgentHost(
+            outbox = Outbox(tmp.newFile()), vault = KeyVault(tmp.newFile(), box), phone = { FakePhone(state) },
+            transport = ScriptedTransport(toolReply("done", """{"success":true,"answer":"ok"}"""),
+                toolReply("done", """{"success":true,"answer":"ok"}""")),
+            send = { sent += JSONObject(it); true }, runner = { it.run() },
+            defaultsFile = java.io.File(dir, "defaults.json"), bundledDefaults = { null },
+        )
+        credentials(host)
+        host.handle("agent/run", runParams())  // saves the dashboard's settings
+        sent.clear()
+        assertTrue(host.startLocal("check the weather", reasoning = false, maxSteps = 7) !is ApiResponse.Error)
+        val started = sent.first().getJSONObject("params")
+        assertEquals(listOf("agent/started", "check the weather", "7"),
+            listOf(sent.first().getString("method"), started.getString("instruction"), started.getInt("max_steps").toString()))
+    }
+
+    @Test
+    fun `settings from the dashboard are used for the app's own runs`() {
+        val dir = tmp.newFolder()
+        val transport = ScriptedTransport(toolReply("done", """{"success":true,"answer":"ok"}"""))
+        val host = AgentHost(
+            outbox = Outbox(tmp.newFile()), vault = KeyVault(tmp.newFile(), box), phone = { FakePhone(state) },
+            transport = transport, send = { sent += JSONObject(it); true }, runner = { it.run() },
+            defaultsFile = java.io.File(dir, "defaults.json"), bundledDefaults = { null },
+        )
+        val defaults = runParams().apply { remove("uuid"); remove("instruction"); put("executor_model", "gemini-x") }
+        host.handle("agent/credentials", JSONObject().put("key", "k").put("hash", "h"))
+        host.handle("agent/settings", JSONObject().put("defaults", defaults))
+        assertTrue(host.startLocal("open settings", null, null) !is ApiResponse.Error)
+        assertEquals("gemini-x", transport.requests.first().second.getString("model"))
+    }
+
+    @Test
+    fun `the app's own run starts from the home screen`() {
+        val phone = FakePhone(state)
+        val host = AgentHost(
+            outbox = Outbox(tmp.newFile()), vault = KeyVault(tmp.newFile(), box), phone = { phone },
+            transport = ScriptedTransport(toolReply("done", """{"success":true,"answer":"ok"}""")),
+            send = { sent += JSONObject(it); true }, runner = { it.run() },
+        )
+        credentials(host)
+        host.start(RunSpec.fromJson(runParams("u8")), announce = true)
+        assertEquals("global 2", phone.done.first())  // leave the FastAutomate screen first
+    }
 }

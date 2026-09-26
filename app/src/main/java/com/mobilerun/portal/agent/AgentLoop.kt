@@ -28,7 +28,7 @@ class AgentLoop(
         var sameInRow = 0
         var lastKey = ""
         sink.event("phase", "Reading the screen", 0)
-        var screen = observe() ?: return Result(RunStatus.FAILED, DispatcherPhoneControl.NO_SERVICE, 0)
+        var screen = observe() ?: return Result(RunStatus.FAILED, UNREADABLE, 0)
         try {
             var goals = if (spec.reasoning) plan(screen, emptyList()) else emptyList()
             while (true) {
@@ -114,6 +114,7 @@ class AgentLoop(
 
     companion object {
         const val SETTLE_MS = 700L
+        const val UNREADABLE = "Could not read the screen (is FastAutomate v2 switched on in Accessibility?)"
         const val HISTORY = 8
         const val STUCK = 3
         const val VISION_SIDE = 960

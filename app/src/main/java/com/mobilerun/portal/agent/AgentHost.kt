@@ -24,6 +24,8 @@ class AgentHost(
     private val send: (String) -> Boolean,
     private val runner: (Runnable) -> Unit = { Thread(it, "FaAgent").start() },
     private val clock: () -> Long = System::currentTimeMillis,
+    private val defaultsFile: File? = null,
+    private val bundledDefaults: () -> String? = { null },
 ) {
     @Volatile
     var listener: RunListener? = null
@@ -40,7 +42,14 @@ class AgentHost(
             vault.save(params.getString("key"), params.getString("hash"))
             ApiResponse.RawObject(JSONObject().put("saved", true))
         }
-        "agent/run" -> start(RunSpec.fromJson(params), announce = false)
+        "agent/settings" -> { // the dashboard's current provider, models and limits, for the app's own runs
+            params.optJSONObject("defaults")?.let { saveDefaults(it) }
+            ApiResponse.RawObject(JSONObject().put("saved", true))
+        }
+        "agent/run" -> {
+            saveDefaults(params)
+            start(RunSpec.fromJson(params), announce = false)
+        }
         "agent/stop" -> {
             stop(params.optString("uuid"))
             ApiResponse.RawObject(JSONObject().put("stopping", true))
@@ -74,8 +83,22 @@ class AgentHost(
             post("agent/started", spec.uuid, 0, JSONObject().put("instruction", spec.instruction)
                 .put("reasoning", spec.reasoning).put("max_steps", spec.maxSteps))
         }
-        runner(Runnable { finish(spec, control, loop, seq) })
+        runner(Runnable { finish(spec, control, loop, seq, fromApp = announce) })
         return ApiResponse.RawObject(JSONObject().put("accepted", true))
+    }
+
+    /** The app's own Run button: the last settings the dashboard sent (or the bundled ones). */
+    fun startLocal(instruction: String, reasoning: Boolean?, maxSteps: Int?): ApiResponse {
+        val saved = defaultsFile?.takeIf { it.exists() }?.readText() ?: bundledDefaults()
+            ?: return ApiResponse.Error("Connect this phone to the dashboard once first")
+        val json = JSONObject(saved).put("uuid", java.util.UUID.randomUUID().toString()).put("instruction", instruction.trim())
+        if (reasoning != null) json.put("reasoning", reasoning)
+        if (maxSteps != null) json.put("max_steps", maxSteps)
+        return start(RunSpec.fromJson(json), announce = true)
+    }
+
+    private fun saveDefaults(params: JSONObject) {
+        defaultsFile?.writeText(JSONObject(params.toString()).apply { remove("uuid"); remove("instruction") }.toString())
     }
 
     fun stop(uuid: String) {
@@ -84,7 +107,11 @@ class AgentHost(
 
     fun onConnected() = outbox.flush(send)
 
-    private fun finish(spec: RunSpec, control: PhoneControl, loop: AgentLoop, seq: AtomicInteger) {
+    private fun finish(spec: RunSpec, control: PhoneControl, loop: AgentLoop, seq: AtomicInteger, fromApp: Boolean) {
+        if (fromApp) { // started from FastAutomate's own screen, which the screen reader skips: leave it first
+            control.global(Actions.GLOBAL_HOME)
+            control.sleep(LEAVE_APP_MS)
+        }
         val result = try {
             loop.run()
         } catch (e: Exception) {
@@ -108,6 +135,7 @@ class AgentHost(
     companion object {
         const val SHOT_SIDE = 480
         const val SHOT_QUALITY = 60
+        const val LEAVE_APP_MS = 800L
     }
 }
 
@@ -116,10 +144,15 @@ object AgentRuntime {
     @Volatile
     private var host: AgentHost? = null
 
+    @Volatile
+    private var store: RunStore? = null
+
     @Synchronized
     fun init(context: Context) {
         if (host != null) return
         val dir = File(context.filesDir, "agent").apply { mkdirs() }
+        val runs = RunStore(File(dir, "runs"))
+        store = runs
         host = AgentHost(
             outbox = Outbox(File(dir, "outbox.json")),
             vault = KeyVault(File(dir, "key.json"), KeystoreSecretBox()),
@@ -130,10 +163,16 @@ object AgentRuntime {
             },
             transport = OkHttpTransport(),
             send = { text -> ReverseConnectionService.getInstance()?.sendText(text) ?: false },
-        )
+            defaultsFile = File(dir, "defaults.json"),
+            bundledDefaults = {
+                runCatching { context.assets.open("agent_defaults.json").bufferedReader().readText() }.getOrNull()
+            },
+        ).also { it.listener = runs }
     }
 
     fun host(): AgentHost? = host
+
+    fun store(): RunStore? = store
 
     fun keyHash(): String = host?.keyHash().orEmpty()
 

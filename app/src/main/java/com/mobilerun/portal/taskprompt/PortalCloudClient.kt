@@ -1,5 +1,7 @@
 package com.mobilerun.portal.taskprompt
 
+import com.mobilerun.portal.agent.LocalTasks
+
 import android.util.Log
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -605,7 +607,7 @@ class PortalCloudClient(
             }
         }
 
-        private fun parseTaskStatus(body: String): String? {
+        internal fun parseTaskStatus(body: String): String? {
             return try {
                 JSONObject(body).optString("status").trim().takeIf { it.isNotBlank() }
             } catch (_: Exception) {
@@ -702,7 +704,7 @@ class PortalCloudClient(
             )
         }
 
-        private fun parseTaskDetails(body: String, fallbackTaskId: String): PortalTaskDetails? {
+        internal fun parseTaskDetails(body: String, fallbackTaskId: String): PortalTaskDetails? {
             return try {
                 val root = JSONObject(body)
                 val task =
@@ -856,6 +858,7 @@ class PortalCloudClient(
         authToken: String,
         callback: (PortalModelsLoadResult) -> Unit,
     ) {
+        if (LocalTasks.ENABLED) return LocalTasks.models(callback) // FastAutomate v2: runs live on this phone
         val request = buildModelsRequest(restBaseUrl, authToken)
         okHttpClient.newCall(request).enqueue(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) {
@@ -910,6 +913,7 @@ class PortalCloudClient(
         authToken: String,
         callback: (PortalBalanceResult) -> Unit,
     ) {
+        if (LocalTasks.ENABLED) return LocalTasks.balance(callback) // FastAutomate v2: runs live on this phone
         val request = buildBalanceRequest(cloudBaseUrl, authToken)
         okHttpClient.newCall(request).enqueue(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) {
@@ -972,6 +976,7 @@ class PortalCloudClient(
         launchStartedAtMs: Long = System.currentTimeMillis(),
         callback: (PortalTaskLaunchResult) -> Unit,
     ) {
+        if (LocalTasks.ENABLED) return LocalTasks.launch(draft, callback) // FastAutomate v2: runs live on this phone
         val completionGate = AtomicBoolean(false)
         val request = buildLaunchTaskRequest(restBaseUrl, authToken, deviceId, draft)
         okHttpClient.newCall(request).enqueue(object : okhttp3.Callback {
@@ -1210,6 +1215,7 @@ class PortalCloudClient(
         taskId: String,
         callback: (PortalTaskStatusResult) -> Unit,
     ) {
+        if (LocalTasks.ENABLED) return LocalTasks.status(taskId, callback) // FastAutomate v2: runs live on this phone
         val request = buildTaskStatusRequest(restBaseUrl, authToken, taskId)
         okHttpClient.newCall(request).enqueue(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) {
@@ -1249,6 +1255,7 @@ class PortalCloudClient(
         taskId: String,
         callback: (PortalTaskDetailsResult) -> Unit,
     ) {
+        if (LocalTasks.ENABLED) return LocalTasks.details(taskId, callback) // FastAutomate v2: runs live on this phone
         val request = buildTaskDetailsRequest(restBaseUrl, authToken, taskId)
         okHttpClient.newCall(request).enqueue(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) {
@@ -1290,6 +1297,7 @@ class PortalCloudClient(
         pageSize: Int,
         callback: (PortalTaskHistoryResult) -> Unit,
     ) {
+        if (LocalTasks.ENABLED) return LocalTasks.list(page, pageSize, callback) // FastAutomate v2: runs live on this phone
         val request = buildListTasksRequest(restBaseUrl, authToken, query, page, pageSize)
         okHttpClient.newCall(request).enqueue(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) {
@@ -1328,6 +1336,7 @@ class PortalCloudClient(
         taskId: String,
         callback: (PortalTaskScreenshotResult) -> Unit,
     ) {
+        if (LocalTasks.ENABLED) return LocalTasks.screenshots(taskId, callback) // FastAutomate v2: runs live on this phone
         val request = buildTaskScreenshotsRequest(restBaseUrl, authToken, taskId)
         okHttpClient.newCall(request).enqueue(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) {
@@ -1367,6 +1376,7 @@ class PortalCloudClient(
         taskId: String,
         callback: (PortalTaskTrajectoryResult) -> Unit,
     ) {
+        if (LocalTasks.ENABLED) return LocalTasks.trajectory(taskId, callback) // FastAutomate v2: runs live on this phone
         val request = buildTaskTrajectoryRequest(restBaseUrl, authToken, taskId)
         okHttpClient.newCall(request).enqueue(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) {
@@ -1406,6 +1416,7 @@ class PortalCloudClient(
         taskId: String,
         callback: (PortalTaskCancelResult) -> Unit,
     ) {
+        if (LocalTasks.ENABLED) return LocalTasks.cancel(taskId, callback) // FastAutomate v2: runs live on this phone
         val request = buildCancelTaskRequest(restBaseUrl, authToken, taskId)
         okHttpClient.newCall(request).enqueue(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) {

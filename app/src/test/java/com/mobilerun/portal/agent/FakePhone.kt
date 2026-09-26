@@ -6,9 +6,10 @@ import org.json.JSONObject
 class FakePhone(var state: JSONObject = JSONObject(), var shot: String? = "SHOT") : PhoneControl {
     val done = mutableListOf<String>()
     var failTaps = false
+    var unreadable = false
     var apps = listOf("Settings" to "com.android.settings", "Chrome" to "com.android.chrome")
 
-    override fun readScreen() = state
+    override fun readScreen() = if (unreadable) null else state
     override fun screenshot(maxSide: Int, quality: Int) = shot.also { done += "shot $maxSide" }
     override fun tap(x: Int, y: Int): String? { done += "tap $x,$y"; return if (failTaps) "Failed to perform tap" else null }
     override fun swipe(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Int): String? { done += "swipe $x1,$y1>$x2,$y2"; return null }

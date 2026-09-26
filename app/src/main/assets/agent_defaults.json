@@ -1,0 +1,203 @@
+{
+ "reasoning": true,
+ "max_steps": 30,
+ "time_limit_s": 900,
+ "vision": true,
+ "planner_model": "google/gemini-2.5-flash",
+ "executor_model": "google/gemini-2.5-flash",
+ "base_url": "https://openrouter.ai/api/v1",
+ "prompts": {
+  "version": "2026-09-26.1",
+  "planner": "You plan work for an AI agent that operates an Android phone by tapping, typing and scrolling.\nGiven the task and the current screen, write the shortest list of concrete goals (at most 6) that completes the task.\nEach goal is one visible outcome, for example \"Settings app is open\" or \"Search results for 'weather' are shown\".\nApps are opened directly by name (the agent has an open_app action), so never plan to look for app icons or the app drawer.\nIf the agent got stuck, choose a different route than the one that failed.\nReply with JSON only: {\"goals\": [\"...\", \"...\"]}",
+  "executor": "You operate an Android phone to complete a task. Each turn you get the task, the plan (when there is\none), your recent actions with their results, and the current screen as a numbered list of elements (sometimes also a\nscreenshot). Choose exactly ONE action by calling one tool.\n\nRules:\n- To open an app, call open_app with its name. Never hunt for its icon or open the app drawer.\n- Prefer tapping elements by their number. Use tap_at only when what you need is not in the list.\n- To type, give the number of the text field so it gets focused first. Use enter to submit a search.\n- If an action did not change the screen, or your recent actions say you already did it on this screen, do something different.\n- To reach something off screen, scroll. To leave a screen, use back.\n- Call done(success=true, answer=...) as soon as the task is complete, and put anything the task asked you to find in answer.\n- Call done(success=false, answer=<why>) when the task is impossible, for example a login you have no credentials for.\n- Never type passwords, payment details or personal data unless the task gives them to you.",
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "tap",
+     "description": "Tap a screen element by its number.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "index": {
+        "type": "integer",
+        "description": "Element number from the screen list"
+       }
+      },
+      "required": [
+       "index"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "tap_at",
+     "description": "Tap a point on the screen, in screen pixels.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "x": {
+        "type": "integer"
+       },
+       "y": {
+        "type": "integer"
+       }
+      },
+      "required": [
+       "x",
+       "y"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "type",
+     "description": "Type text into a field. Give the field's number to focus it first. Existing text is replaced.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "text": {
+        "type": "string"
+       },
+       "index": {
+        "type": "integer",
+        "description": "Element number from the screen list"
+       }
+      },
+      "required": [
+       "text"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "scroll",
+     "description": "Scroll the screen, or the numbered scrollable element, to reveal more. 'down' shows what is below.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "direction": {
+        "type": "string",
+        "enum": [
+         "up",
+         "down",
+         "left",
+         "right"
+        ]
+       },
+       "index": {
+        "type": "integer",
+        "description": "Element number from the screen list"
+       }
+      },
+      "required": [
+       "direction"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "back",
+     "description": "Press the Back button.",
+     "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "home",
+     "description": "Go to the home screen.",
+     "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "enter",
+     "description": "Press Enter / Search on the keyboard.",
+     "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "open_app",
+     "description": "Open an installed app by the name shown under its icon.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "name": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "name"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "wait",
+     "description": "Wait for the screen to finish loading.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "seconds": {
+        "type": "number",
+        "description": "1 to 10"
+       }
+      },
+      "required": [
+       "seconds"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "done",
+     "description": "Finish the task.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "success": {
+        "type": "boolean"
+       },
+       "answer": {
+        "type": "string",
+        "description": "Result or reason"
+       }
+      },
+      "required": [
+       "success",
+       "answer"
+      ]
+     }
+    }
+   }
+  ]
+ }
+}

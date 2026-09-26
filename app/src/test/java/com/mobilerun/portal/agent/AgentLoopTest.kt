@@ -98,6 +98,14 @@ class AgentLoopTest {
     }
 
     @Test
+    fun `an unreadable screen is reported as such`() {
+        val phone = FakePhone(state).apply { unreadable = true }
+        val result = loop(spec(), ScriptedTransport(), phone).run()
+        assertEquals(RunStatus.FAILED, result.status)
+        assertTrue(result.result, result.result.startsWith("Could not read the screen"))
+    }
+
+    @Test
     fun `budget exhaustion fails the run`() {
         val transport = ScriptedTransport(HttpResult(403, """{"error":{"message":"Key limit exceeded"}}"""))
         val result = loop(spec(), transport).run()
