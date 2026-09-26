@@ -219,7 +219,7 @@ object AgentRuntime {
             vault = KeyVault(File(dir, "key.json"), KeystoreSecretBox()),
             phone = {
                 MobilerunAccessibilityService.getInstance()?.let { service ->
-                    DispatcherPhoneControl { service.getActionDispatcher() }
+                    OverlayShy(DispatcherPhoneControl { service.getActionDispatcher() }) { hidden -> overlayHider(hidden) }
                 }
             },
             transport = OkHttpTransport(),
@@ -235,6 +235,10 @@ object AgentRuntime {
     }
 
     fun host(): AgentHost? = host
+
+    /** Set by the floating bubble: moves it out of the agent's way while it looks or touches. */
+    @Volatile
+    var overlayHider: (Boolean) -> Unit = {}
 
     fun store(): RunStore? = store
 

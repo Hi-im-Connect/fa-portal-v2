@@ -1,0 +1,347 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FastAutomate v2: the everyday screen (Home / Tasks / Settings). The developer screen is Settings > Advanced. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/mobilerun_background"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/fa_bar"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="20dp"
+        android:paddingVertical="14dp">
+
+        <ImageView
+            android:layout_width="30dp"
+            android:layout_height="30dp"
+            android:contentDescription="@null"
+            android:src="@drawable/logo" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:layout_weight="1"
+            android:fontFamily="@font/geist_sans"
+            android:text="FastAutomate"
+            android:textColor="@color/fa_bar_ink"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/status_pill"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/fa_status_pill"
+            android:fontFamily="@font/geist_sans"
+            android:text="Offline"
+            android:textColor="@color/fa_bar_muted"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <!-- Home -->
+        <ScrollView
+            android:id="@+id/page_home"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/setup_card"
+                    style="@style/FaCard">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="18dp">
+
+                        <TextView
+                            style="@style/FaTitle"
+                            android:text="Finish setup" />
+
+                        <TextView
+                            style="@style/FaMuted"
+                            android:text="A few switches so FastAutomate can work your phone." />
+
+                        <LinearLayout
+                            android:id="@+id/setup_rows"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:orientation="vertical" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/live_card"
+                    style="@style/FaCard"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="18dp">
+
+                        <TextView
+                            android:id="@+id/live_label"
+                            style="@style/FaMuted"
+                            android:layout_marginTop="0dp"
+                            android:text="Working on" />
+
+                        <TextView
+                            android:id="@+id/live_task"
+                            style="@style/FaTitle"
+                            android:layout_marginTop="2dp" />
+
+                        <ProgressBar
+                            android:id="@+id/live_progress"
+                            style="?android:attr/progressBarStyleHorizontal"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:indeterminate="true"
+                            android:indeterminateTint="@color/mobilerun_primary" />
+
+                        <TextView
+                            android:id="@+id/live_step"
+                            style="@style/FaMuted"
+                            android:maxLines="2" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:orientation="horizontal">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_pause"
+                                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginEnd="8dp"
+                                android:layout_weight="1"
+                                android:text="Pause"
+                                android:textColor="@color/mobilerun_foreground"
+                                app:cornerRadius="12dp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_stop"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:backgroundTint="@color/fa_off"
+                                android:text="Stop"
+                                app:cornerRadius="12dp" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/run_card"
+                    style="@style/FaCard">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="18dp">
+
+                        <TextView
+                            style="@style/FaTitle"
+                            android:text="What should I do?" />
+
+                        <EditText
+                            android:id="@+id/task_input"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:background="@drawable/fa_input_bg"
+                            android:fontFamily="@font/geist_sans"
+                            android:gravity="top"
+                            android:hint="e.g. Open YouTube and search for lo-fi music"
+                            android:inputType="textMultiLine|textCapSentences"
+                            android:minLines="3"
+                            android:padding="14dp"
+                            android:textColor="@color/mobilerun_foreground"
+                            android:textColorHint="@color/mobilerun_muted_foreground"
+                            android:textSize="16sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_run"
+                            android:layout_width="match_parent"
+                            android:layout_height="56dp"
+                            android:layout_marginTop="12dp"
+                            android:backgroundTint="@color/mobilerun_primary"
+                            android:fontFamily="@font/geist_sans"
+                            android:text="Run"
+                            android:textAllCaps="false"
+                            android:textSize="16sp"
+                            app:cornerRadius="14dp" />
+
+                        <TextView
+                            android:id="@+id/last_result"
+                            style="@style/FaMuted"
+                            android:layout_marginTop="12dp"
+                            android:visibility="gone" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <TextView
+                    style="@style/FaMuted"
+                    android:layout_marginHorizontal="4dp"
+                    android:text="Tip: the round FastAutomate bubble runs a task from any app." />
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- Tasks -->
+        <ScrollView
+            android:id="@+id/page_tasks"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/task_list"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp" />
+        </ScrollView>
+
+        <!-- Settings -->
+        <ScrollView
+            android:id="@+id/page_settings"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <com.google.android.material.card.MaterialCardView style="@style/FaCard">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="18dp">
+
+                        <TextView
+                            android:id="@+id/set_phone"
+                            style="@style/FaTitle" />
+
+                        <TextView
+                            android:id="@+id/set_dashboard"
+                            style="@style/FaMuted" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_reconnect"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="Reconnect"
+                            android:textAllCaps="false"
+                            android:textColor="@color/mobilerun_foreground"
+                            app:cornerRadius="12dp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <com.google.android.material.card.MaterialCardView style="@style/FaCard">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:padding="18dp">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                style="@style/FaTitle"
+                                android:text="Floating bubble" />
+
+                            <TextView
+                                style="@style/FaMuted"
+                                android:text="Run a task from any app. Drag it to the X to hide it." />
+                        </LinearLayout>
+
+                        <com.google.android.material.switchmaterial.SwitchMaterial
+                            android:id="@+id/switch_bubble"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <com.google.android.material.card.MaterialCardView style="@style/FaCard">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="18dp">
+
+                        <TextView
+                            style="@style/FaTitle"
+                            android:text="Advanced" />
+
+                        <TextView
+                            style="@style/FaMuted"
+                            android:text="Connection details, local server and logs, for troubleshooting." />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_advanced"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="Open developer tools"
+                            android:textAllCaps="false"
+                            android:textColor="@color/mobilerun_foreground"
+                            app:cornerRadius="12dp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <TextView
+                    android:id="@+id/set_version"
+                    style="@style/FaMuted"
+                    android:layout_marginHorizontal="4dp" />
+            </LinearLayout>
+        </ScrollView>
+    </FrameLayout>
+
+    <com.google.android.material.bottomnavigation.BottomNavigationView
+        android:id="@+id/nav"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/mobilerun_card"
+        app:itemIconTint="@color/fa_nav_item"
+        app:itemTextColor="@color/fa_nav_item"
+        app:labelVisibilityMode="labeled"
+        app:menu="@menu/home_tabs" />
+</LinearLayout>

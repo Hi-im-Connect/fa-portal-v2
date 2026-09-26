@@ -274,6 +274,7 @@ class MobilerunAccessibilityService : AccessibilityService(), ConfigManager.Conf
         instance = this
         TriggerRuntime.initialize(this)
         reconnectToDashboard()
+        com.mobilerun.portal.ui.home.FaBubble.attach(this) // FastAutomate v2: the floating chat bubble
 
         serviceInfo = AccessibilityServiceInfo().apply {
             eventTypes = AccessibilityEvent.TYPES_ALL_MASK
@@ -1551,6 +1552,7 @@ class MobilerunAccessibilityService : AccessibilityService(), ConfigManager.Conf
         // in onInterrupt — interrupt is not an unbind.)
         Log.d(TAG, "Accessibility service unbound")
         if (instance === this) instance = null
+        com.mobilerun.portal.ui.home.FaBubble.detach()
         apiHandler?.close()
         return super.onUnbind(intent)
     }

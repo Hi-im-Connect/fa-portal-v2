@@ -595,7 +595,7 @@ class ReverseConnectionService : Service() {
     }
 
     private fun createNotification(): Notification {
-        val intent = Intent(this, com.mobilerun.portal.ui.MainActivity::class.java)
+        val intent = Intent(this, com.mobilerun.portal.ui.home.HomeActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
             this,
             0,

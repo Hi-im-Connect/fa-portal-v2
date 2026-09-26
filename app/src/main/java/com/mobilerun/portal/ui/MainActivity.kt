@@ -2426,24 +2426,11 @@ class MainActivity : AppCompatActivity(), ConfigManager.ConfigChangeListener {
         try {
             val data: Uri? = intent?.data
             if (data != null && PortalAuthDeepLink.isConnectLink(data.scheme, data.host)) {
-                // FastAutomate dashboard QR/link: fastautomate://connect?token=...&url=...
-                // Only our own dashboard address is accepted, so a link cannot point the phone elsewhere.
-                val configManager = ConfigManager.getInstance(this)
-                val token = sanitizeToken(data.getQueryParameter("token"))
-                val url = data.getQueryParameter("url")?.trim().orEmpty()
-                    .ifBlank { configManager.defaultReverseConnectionUrl }
-                val official = PortalCloudClient.isOfficialMobilerunCloudConnection(
-                    reverseConnectionUrl = url,
-                    defaultReverseConnectionUrl = configManager.defaultReverseConnectionUrl,
-                )
-                if (token.isBlank() || !official) {
+                // FastAutomate dashboard link: fastautomate2://connect?token=...&url=...
+                if (!com.mobilerun.portal.ui.home.FaConnect.connect(this, data.getQueryParameter("token"), data.getQueryParameter("url"))) {
                     Toast.makeText(this, "This connect link is not valid", Toast.LENGTH_LONG).show()
                     return
                 }
-                configManager.reverseConnectionToken = token
-                configManager.reverseConnectionUrl = url
-                configManager.reverseConnectionEnabled = true
-                restartReverseConnectionService()
                 Toast.makeText(this, "Connecting to FastAutomate...", Toast.LENGTH_SHORT).show()
                 return
             }
