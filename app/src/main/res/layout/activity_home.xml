@@ -207,7 +207,7 @@
                 <TextView
                     style="@style/FaMuted"
                     android:layout_marginHorizontal="4dp"
-                    android:text="Tip: the round FastAutomate bubble runs a task from any app." />
+                    android:text="Tip: tap the round FastAutomate bubble in any app to chat. Ask it anything, or tell it what to do." />
             </LinearLayout>
         </ScrollView>
 
@@ -322,7 +322,7 @@
 
                             <TextView
                                 style="@style/FaMuted"
-                                android:text="Run a task from any app. Drag it to the X to hide it." />
+                                android:text="Chat with FastAutomate from any app. Drag it to the X to hide it." />
                         </LinearLayout>
 
                         <com.google.android.material.switchmaterial.SwitchMaterial

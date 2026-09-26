@@ -33,7 +33,26 @@ object ChatMessages {
             }
             "succeeded" -> ChatMessage(false, "Done · $count\n${r.result}", Tone.GOOD)
             "stopped" -> ChatMessage(false, "Stopped · $count", Tone.BAD)
-            else -> ChatMessage(false, "Failed · $count\n${r.result}", Tone.BAD)
+            else -> friendly(r.result)?.let { ChatMessage(false, "Couldn't finish · $count\n$it", Tone.BAD) }
+                ?: ChatMessage(false, "Failed · $count\n${r.result}", Tone.BAD)
         }
+    }
+
+    /** The agent's limits in plain words. */
+    private fun friendly(result: String): String? = when {
+        result.startsWith("Reached the step limit") -> "I ran out of steps. Try a smaller request?"
+        result == "Ran out of time" -> "I ran out of time. Try a smaller request?"
+        else -> null
+    }
+
+    /** A chat head's letters: the first letters of the first two real words (one letter for Arabic, whose
+     *  letters join; the article "ال" skipped). A new chat has none (it shows a chat icon). */
+    fun initials(name: String): String {
+        if (name == "New chat") return ""
+        val words = name.split(Regex("\\s+")).map { w -> w.filter(Char::isLetterOrDigit) }.filter { it.isNotEmpty() }
+        val first = words.firstOrNull() ?: return "?"
+        val arabic = first.first() in '\u0600'..'\u06FF'
+        if (arabic) return first.removePrefix("ال").ifEmpty { first }.take(1)
+        return words.take(2).joinToString("") { it.take(1).uppercase() }
     }
 }

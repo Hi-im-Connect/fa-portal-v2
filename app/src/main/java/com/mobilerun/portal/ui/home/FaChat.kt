@@ -259,6 +259,7 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
         scrim.setOnClickListener { minimize() } // tap outside minimizes
         column = frame.findViewById(R.id.chat_column)
         heads = frame.findViewById(R.id.chat_heads)
+        heads.outlineProvider = null // raised while a head is dragged, without a shadow
         headList = frame.findViewById(R.id.chat_head_list)
         slot = frame.findViewById(R.id.head_slot)
         newChat = frame.findViewById(R.id.chat_new)
@@ -281,6 +282,11 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
             clipToOutline = true
         }
         frame.findViewById<View>(R.id.chat_send).setOnClickListener { send(input.text.toString()) }
+        // wraps up to 4 lines, and the keyboard's action key sends (Enter no longer adds a line)
+        input.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+        input.imeOptions = EditorInfo.IME_ACTION_SEND
+        input.setHorizontallyScrolling(false)
+        input.maxLines = 4
         input.setOnEditorActionListener { _, action, _ ->
             if (action == EditorInfo.IME_ACTION_SEND) { send(input.text.toString()); true } else false
         }
@@ -374,7 +380,7 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
             setColor(colorOf(head.tag as String))
             if (selected && !browsing) setStroke(dp(3), Color.WHITE)
         }
-        head.alpha = if (selected || browsing) 1f else 0.8f
+        head.alpha = 1f // solid, like Messenger's heads; the open chat has the white ring
     }
 
     private fun bubbleView(msg: ChatMessage): View {
@@ -623,6 +629,7 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
                 MotionEvent.ACTION_MOVE -> {
                     if (!dragging && hypot(e.rawX - downX, e.rawY - downY) > slop) {
                         dragging = true
+                        heads.translationZ = dp(8).toFloat() // the dragged head stays above the card
                         showTrash(true)
                     }
                     if (dragging) {
@@ -639,6 +646,7 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     showTrash(false)
+                    heads.postDelayed({ heads.translationZ = 0f }, 300)
                     when {
                         !dragging -> {
                             v.animate().scaleX(1f).scaleY(1f).setDuration(100).start()
@@ -702,10 +710,7 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
         return systemDimen("navigation_bar_height")
     }
 
-    private fun initials(name: String): String {
-        if (name == "New chat") return ""
-        return name.split(' ').filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1).uppercase() }.ifEmpty { "?" }
-    }
+    private fun initials(name: String) = ChatMessages.initials(name)
 
     companion object {
         private const val MAX_HEADS = 4

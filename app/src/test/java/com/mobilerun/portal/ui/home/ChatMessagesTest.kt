@@ -36,4 +36,22 @@ class ChatMessagesTest {
         assertEquals(ChatMessage(false, "Paused", Tone.STEP), of(record("running", "", "ok" to "one", "paused" to "Paused")))
         assertEquals(ChatMessage(false, "Working...\none", Tone.STEP), of(record("running", "", "paused" to "Paused", "resumed" to "Resumed", "ok" to "one")))
     }
+
+    @Test
+    fun `limits read like a person, not an engine`() {
+        assertEquals(
+            ChatMessage(false, "Couldn't finish · 3 steps\nI ran out of steps. Try a smaller request?", Tone.BAD),
+            of(record("failed", "Reached the step limit (30) before finishing")),
+        )
+        assertEquals(ChatMessage(false, "Couldn't finish · 3 steps\nI ran out of time. Try a smaller request?", Tone.BAD), of(record("failed", "Ran out of time")))
+    }
+
+    @Test
+    fun `head initials come from real words`() {
+        assertEquals("OY", ChatMessages.initials("open youtube please"))
+        assertEquals("م", ChatMessages.initials("الماك ميني"))  // not "ال", the Arabic article
+        assertEquals("H", ChatMessages.initials("hi"))
+        assertEquals("", ChatMessages.initials("New chat"))
+        assertEquals("W", ChatMessages.initials("  ¿what?"))
+    }
 }

@@ -104,6 +104,7 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
     private var parked: Pair<Int, Int>? = null // where the bubble was before the chat opened
     private var locked = false
     private var foregroundApp: String? = null
+    private var inOwnApp = false // FastAutomate's own screens: the bubble stays out of the way there
     private val chat = FaChat(service, this)
 
     // the bubble's offset between window coordinates and the screen, for the agent's hit test
@@ -233,8 +234,22 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
         springX.cancel()
         springY.cancel()
         parked = params.x to params.y
+        applyOwnApp()
         render() // the pause button steps away while the chat is open
         chat.open() // the chat grows out of the bubble and moves it onto its slot
+    }
+
+    /** Hidden over FastAutomate's own screens (the app has its own Chats), unless the chat is open there. */
+    private fun applyOwnApp() {
+        if (!shown || hiddenForAgent) return
+        val hide = inOwnApp && parked == null
+        bubble.animate().alpha(if (hide) 0f else 1f).setDuration(150).start()
+        val flags = if (hide) params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        else params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+        if (flags != params.flags) {
+            params.flags = flags
+            runCatching { wm.updateViewLayout(bubble, params) }
+        }
     }
 
     private fun measureOffset() {
@@ -267,6 +282,7 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
         val (x, y) = parked ?: return
         parked = null
         springTo(x, y)
+        main.postDelayed({ applyOwnApp() }, 250)
         main.postDelayed({ render() }, 200) // the pause button comes back once the bubble is home
     }
 
@@ -313,6 +329,7 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
             pauseButton.visibility = View.VISIBLE
             pauseParams.flags = pauseParams.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
             if (pauseShown) runCatching { wm.updateViewLayout(pauseButton, pauseParams) }
+            applyOwnApp()
         } else {
             main.postDelayed(restore, RESTORE_MS) // after the gesture has landed
         }
@@ -437,10 +454,12 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
 
         private fun dismiss() {
             bubble.animate().scaleX(0f).scaleY(0f).setDuration(160).withEndAction {
+                springX.cancel() // the pull onto the X must not move it after this
+                springY.cancel()
                 setEnabled(service, false)
                 bubble.scaleX = 1f
                 bubble.scaleY = 1f
-                params.x = 0
+                params.x = 0 // turned back on later: it comes back at the left edge, a third down
                 params.y = service.resources.displayMetrics.heightPixels / 3
             }.start()
             Toast.makeText(service, "Bubble hidden. Turn it back on in FastAutomate > Settings.", Toast.LENGTH_LONG).show()
@@ -521,6 +540,8 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
             b.main.post {
                 val before = b.foregroundApp
                 b.foregroundApp = packageName
+                b.inOwnApp = packageName == b.service.packageName
+                b.applyOwnApp()
                 if (before != null && before != packageName && packageName != b.service.packageName && b.chat.isOpen) b.chat.minimize()
             }
         }
