@@ -100,6 +100,7 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
     // ---- opening and closing ---------------------------------------------------------------------
     fun open() {
         if (root != null) return
+        overlayHidden = false // try the Messenger-style window again each time
         val ctx = ContextThemeWrapper(service, R.style.Theme_Mobilerun)
         val frame = object : FrameLayout(ctx) {
             override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -119,19 +120,19 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
         LayoutInflater.from(ctx).inflate(R.layout.fa_chat_overlay, frame, true)
         bind(frame)
         val (screenW, screenH) = screenSize()
-        val top = statusBar()
         params = WindowManager.LayoutParams(
-            // between the status bar and the gesture bar: both stay visible and usable
-            screenW, screenH - top - bottomReserve(), windowType(),
+            // from the very top (the dim also covers the status bar, which stays readable) to the gesture bar
+            screenW, screenH - bottomReserve(), windowType(),
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = 0
-            y = top // below the status bar: it stays visible
+            y = 0
             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            title = WINDOW_TITLE
         }
-        anchorY = bubble.center().second - top
+        anchorY = bubble.center().second
         ime = 0
         browsing = false
         confirmDelete = null
@@ -146,6 +147,7 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
         holdTask()
         render()
         card.post { animateIn() }
+        frame.postDelayed({ if (root === frame && !shownOnScreen()) fallBackToAccessibility() }, SHOWN_CHECK_MS)
     }
 
     /** Fold back into the bubble (tap on the bubble, outside, or Back), then maybe do something. */
@@ -227,9 +229,10 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
         val rowH = dp(64)
         val pointerH = dp(10)
         val bottom = winH - ime - dp(12)
-        var cardH = (winH * CARD_SHARE).toInt()
-        var top = (anchorY - rowH / 2).coerceAtLeast(dp(4))
-        if (top + rowH + pointerH + cardH > bottom) top = maxOf(dp(4), bottom - rowH - pointerH - cardH)
+        val minTop = statusBar() + dp(4) // the heads and card stay below the status bar
+        var cardH = ((winH - statusBar()) * CARD_SHARE).toInt()
+        var top = (anchorY - rowH / 2).coerceAtLeast(minTop)
+        if (top + rowH + pointerH + cardH > bottom) top = maxOf(minTop, bottom - rowH - pointerH - cardH)
         if (top + rowH + pointerH + cardH > bottom) cardH = maxOf(dp(180), bottom - top - rowH - pointerH)
         (column.layoutParams as FrameLayout.LayoutParams).topMargin = top
         card.layoutParams.height = cardH
@@ -298,8 +301,10 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
         input.imeOptions = EditorInfo.IME_ACTION_SEND
         input.setHorizontallyScrolling(false)
         input.maxLines = 4
-        input.setOnEditorActionListener { _, action, _ ->
-            if (action == EditorInfo.IME_ACTION_SEND) { send(input.text.toString()); true } else false
+        input.setOnEditorActionListener { _, action, event ->
+            // the keyboard's send key, or Enter on a hardware keyboard
+            val enter = event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN
+            if (action == EditorInfo.IME_ACTION_SEND || enter) { send(input.text.toString()); true } else false
         }
         pause.setOnClickListener {
             val host = AgentRuntime.host() ?: return@setOnClickListener
@@ -343,8 +348,10 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
         (newChat as android.widget.ImageButton).setImageResource(if (browsing) R.drawable.fa_ic_close else R.drawable.fa_ic_plus)
         if (browsing) renderBrowse(store)
         title.text = if (chat.lines.isEmpty()) "FastAutomate" else chat.title
+        val checking = AgentRuntime.followUp()?.isReviewing(chat.id) == true
         status.text = when {
             chat.id in thinking -> "Typing..."
+            checking -> "Checking the result..."
             !running -> "Ready"
             paused -> "Task paused"
             else -> "Working on a task"
@@ -355,7 +362,7 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
         val messages = ChatMessages.of(chat) { AgentRuntime.store()?.get(it) }
         if (messages.isEmpty()) list.addView(bubbleView(ChatMessage(false, HELLO, Tone.STEP)))
         messages.forEach { list.addView(bubbleView(it)) }
-        if (chat.id in thinking) list.addView(bubbleView(ChatMessage(false, "···", Tone.STEP)))
+        if (chat.id in thinking || checking) list.addView(bubbleView(ChatMessage(false, "···", Tone.STEP)))
         scrollToEnd()
         heads.post { placePointer() }
     }
@@ -594,6 +601,7 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
                         store.add(chatId, store.line("assistant", why))
                         Toast.makeText(service, why, Toast.LENGTH_LONG).show()
                     } else {
+                        AgentRuntime.followUp()?.track(uuid, chatId) // its result gets checked before you hear it
                         store.add(chatId, store.line("task", instruction, run = uuid))
                     }
                     render()
@@ -702,8 +710,35 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
     /** Under Android's gesture bar and back arrow when "Display over other apps" is allowed (like Messenger);
      *  otherwise an accessibility overlay, which draws above them, so it leaves the bottom gesture area free. */
     private fun windowType() =
-        if (android.provider.Settings.canDrawOverlays(service)) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        if (!overlayHidden && android.provider.Settings.canDrawOverlays(service)) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         else WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+
+    /** Android hides "over other apps" windows on some screens (Settings, installers, banking apps): when
+     *  it hides the chat, it comes back at once as an accessibility overlay, which is always shown. */
+    private var overlayHidden = false
+
+    /** Android does not tell an app it hid its window; the accessibility service sees what is really on screen. */
+    private fun shownOnScreen(): Boolean {
+        if (params.type != WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY) return true
+        val windows = runCatching { service.windows }.getOrNull() ?: return true
+        return windows.any { w ->
+            w.type != android.view.accessibility.AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY &&
+                (w.title?.toString() == WINDOW_TITLE || runCatching { w.root?.packageName == service.packageName }.getOrDefault(false))
+        }
+    }
+
+    private fun fallBackToAccessibility() {
+        val frame = root ?: return
+        if (closing || params.type != WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY) return
+        overlayHidden = true
+        runCatching { wm.removeView(frame) }
+        params.type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+        params.height = screenSize().second - bottomReserve()
+        runCatching { wm.addView(frame, params) }.onFailure { root = null; bubble.closed(); return }
+        bubble.raise()
+        place()
+        column.post { dock(); placePointer() }
+    }
 
     private fun bottomReserve(): Int {
         if (windowType() == WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY) return 0 // the system keeps it clear
@@ -725,8 +760,10 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
 
     companion object {
         private const val MAX_HEADS = 4
+        private const val WINDOW_TITLE = "FastAutomate chat"
+        private const val SHOWN_CHECK_MS = 350L
         private const val MIN_BOTTOM_DP = 24
-        private const val CARD_SHARE = 0.8f // of the screen below the status bar
+        private const val CARD_SHARE = 0.9f // of the screen below the status bar
         private const val CARD_STIFFNESS = 700f
         private const val CARD_DAMPING = 0.78f
         private const val CLOSE_MS = 170L

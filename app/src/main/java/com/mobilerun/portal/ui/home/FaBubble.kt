@@ -113,7 +113,12 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
 
     private val screenWatch = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            locked = intent.action != Intent.ACTION_USER_PRESENT && isLocked()
+            // screen off: gone at once (the lock may only kick in seconds later); unlocked: back
+            locked = when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> true
+                Intent.ACTION_USER_PRESENT -> false
+                else -> isLocked() // screen on: still locked, or no lock at all
+            }
             if (locked) chat.closeNow()
             refresh()
         }
@@ -344,7 +349,8 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
         runningUuid = null
         render()
         chat.render()
-        if (!chat.isOpen) { // the chat is closed: say how it went
+        val fromChat = AgentRuntime.chats()?.chatOfRun(uuid) != null // the chat checks it and answers (onChatAnswer)
+        if (!chat.isOpen && !fromChat) { // the chat is closed: say how it went
             val label = when (status) {
                 RunStatus.SUCCEEDED -> "Done"
                 RunStatus.STOPPED -> "Stopped"
@@ -514,7 +520,12 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
             AgentRuntime.host()?.addListener(bubble)
             AgentRuntime.overlayHider = { hidden -> bubble.setAgentHidden(hidden) }
             AgentRuntime.overlayCovers = { x, y -> bubble.covers(x, y) }
+            AgentRuntime.onChatChange = { bubble.main.post { bubble.render(); bubble.chat.render() } }
+            AgentRuntime.onChatAnswer = { _, text ->
+                bubble.main.post { if (!bubble.chat.isOpen) Toast.makeText(bubble.service, text.take(160), Toast.LENGTH_LONG).show() }
+            }
             bubble.locked = bubble.isLocked()
+            bubble.inOwnApp = appOpen
             service.registerReceiver(
                 bubble.screenWatch,
                 IntentFilter().apply { addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_USER_PRESENT) },
@@ -537,14 +548,23 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
         /** The foreground app changed (Home, Recents, another app): fold the chat away like Messenger. */
         fun foreground(packageName: String) {
             val b = instance ?: return
+            // our own windows (the chat itself) can show up as "foreground": they are not an app switch
+            if (packageName == b.service.packageName) return
             b.main.post {
                 val before = b.foregroundApp
                 b.foregroundApp = packageName
-                b.inOwnApp = packageName == b.service.packageName
-                b.applyOwnApp()
-                if (before != null && before != packageName && packageName != b.service.packageName && b.chat.isOpen) b.chat.minimize()
+                if (before != null && before != packageName && b.chat.isOpen) b.chat.minimize()
             }
         }
+
+        /** One of FastAutomate's own screens is open (or not): the bubble keeps out of the way there. */
+        fun appVisible(visible: Boolean) {
+            appOpen = visible
+            instance?.let { b -> b.main.post { b.inOwnApp = visible; b.applyOwnApp() } }
+        }
+
+        @Volatile
+        private var appOpen = false
 
         fun detach() {
             val bubble = instance ?: return

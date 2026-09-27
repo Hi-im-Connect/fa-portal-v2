@@ -58,6 +58,7 @@ class PortalApplication : Application() {
 
     private fun onAppForegrounded() {
         AppVisibilityTracker.setForeground(true)
+        com.mobilerun.portal.ui.home.FaBubble.appVisible(true)
         KeepAliveController.retryStartupIfEnabledAndInactive(this)?.let { reason ->
             Log.w(
                 TAG,
@@ -68,6 +69,7 @@ class PortalApplication : Application() {
 
     private fun onAppBackgrounded() {
         AppVisibilityTracker.setForeground(false)
+        com.mobilerun.portal.ui.home.FaBubble.appVisible(false)
     }
 
     companion object {

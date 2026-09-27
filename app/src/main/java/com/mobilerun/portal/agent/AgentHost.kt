@@ -228,6 +228,17 @@ object AgentRuntime {
     @Volatile
     private var chats: ChatStore? = null
 
+    @Volatile
+    private var followUp: ChatFollowUp? = null
+
+    /** Set by the bubble: a chat changed in the background (a result was checked, a retry started). */
+    @Volatile
+    var onChatChange: () -> Unit = {}
+
+    /** Set by the bubble: the checked answer for a chat's task, to show when the chat is closed. */
+    @Volatile
+    var onChatAnswer: (chatId: String, text: String) -> Unit = { _, _ -> }
+
     @Synchronized
     fun init(context: Context) {
         if (host != null) return
@@ -257,9 +268,30 @@ object AgentRuntime {
             it.addListener(runs)
             it.closeInterrupted(runs.running())  // runs the last process could not finish
         }
+        val h = host ?: return
+        followUp = ChatFollowUp(
+            chats = chats ?: return,
+            runs = { runs.get(it) },
+            brain = { h.brain() },
+            start = { instruction -> startWhenFree(h, instruction) },
+            onChange = { onChatChange() },
+            onFinal = { id, text -> onChatAnswer(id, text) },
+        ).also { h.addListener(it) } // after the run store, so the finished run is already recorded
     }
 
     fun host(): AgentHost? = host
+
+    fun followUp(): ChatFollowUp? = followUp
+
+    /** A retry starts once the finished run has fully let go of the phone. */
+    private fun startWhenFree(h: AgentHost, instruction: String): String? {
+        val until = System.currentTimeMillis() + FREE_WAIT_MS
+        while (h.running() != null && System.currentTimeMillis() < until) Thread.sleep(100)
+        val r = h.startLocal(instruction, null, null, leaveApp = false)
+        return (r as? ApiResponse.RawObject)?.json?.optString("uuid")?.takeIf { it.isNotEmpty() }
+    }
+
+    private const val FREE_WAIT_MS = 5_000L
 
     /** Set by the floating bubble: moves it out of the agent's way while it looks or touches. */
     @Volatile

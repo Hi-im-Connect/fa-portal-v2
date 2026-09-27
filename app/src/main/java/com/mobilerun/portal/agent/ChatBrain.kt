@@ -28,6 +28,38 @@ class ChatBrain(private val llm: LlmClient, private val model: String) {
         }
     }
 
+    /**
+     * A task from this chat just finished: check it against what the user asked (the final screenshot
+     * too). Done = a short answer for the user; wrong or missing = run_task again with a corrected
+     * instruction that says what went wrong, so the planner plans again. The last attempt only reports.
+     */
+    fun review(lines: List<ChatLine>, runs: (String) -> RunRecord?, shot: String?, round: Int, maxRounds: Int): BrainReply {
+        val last = round >= maxRounds
+        val note = buildString {
+            append("(Note from the app, not the user.) The task above just finished, attempt $round of $maxRounds. ")
+            append("Check it against what the user asked")
+            if (shot != null) append(", using the final screenshot of the phone")
+            append(". If the request is fully done, answer the user briefly with the result. ")
+            if (last) {
+                append("This was the last attempt: tell the user honestly what is done and what is not.")
+            } else {
+                append("If anything is wrong or missing, call run_task again with a corrected, complete instruction ")
+                append("that says what went wrong last time and what to do now; the reply says what you are fixing.")
+            }
+        }
+        val content = JSONArray().put(JSONObject().put("type", "text").put("text", note))
+        if (shot != null) content.put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", "data:image/jpeg;base64,$shot")))
+        val messages = messages(lines, runs).put(JSONObject().put("role", "user").put("content", content))
+        return when (val reply = llm.complete(model, messages, if (last) null else TOOLS, MAX_TOKENS, toolChoice = "auto")) {
+            is LlmReply.Text -> BrainReply.Say(reply.text.ifBlank { "The task finished." })
+            is LlmReply.Tool -> {
+                val instruction = reply.call.args.optString("instruction").trim()
+                if (reply.call.name != "run_task" || instruction.isEmpty()) BrainReply.Say(reply.thought.ifBlank { "The task finished." })
+                else BrainReply.Run(reply.call.args.optString("reply").trim().ifEmpty { "Not quite yet, trying again." }, instruction)
+            }
+        }
+    }
+
     private fun messages(lines: List<ChatLine>, runs: (String) -> RunRecord?): JSONArray {
         val out = JSONArray().put(JSONObject().put("role", "system").put("content", SYSTEM))
         for (line in lines.takeLast(HISTORY)) {
@@ -60,6 +92,9 @@ class ChatBrain(private val llm: LlmClient, private val model: String) {
             self-contained instruction (the agent does not see this chat, so include every detail it needs),
             plus a short reply to show the user. If the request is unclear, ask one short question first.
             Task results appear in the chat; use them to answer follow-ups.
+            To act you MUST call the run_task tool. Never write a task, an instruction or a tool call
+            as text in your message: text alone does nothing on the phone.
+            Answer in the language the user writes in.
         """.trimIndent()
 
         val TOOLS: JSONArray = JSONArray().put(
