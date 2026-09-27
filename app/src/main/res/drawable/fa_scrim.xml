@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The dim behind the chat: deeper at the top, where the heads sit, so the app underneath does not show through them. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient android:angle="270" android:startColor="#D9000000" android:centerColor="#99000000" android:endColor="#80000000" />
+</shape>
