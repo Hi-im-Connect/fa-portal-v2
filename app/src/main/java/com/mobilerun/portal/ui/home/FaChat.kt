@@ -241,12 +241,23 @@ class FaChat(private val service: AccessibilityService, private val bubble: Bubb
         bubble.dockAt(at[0], at[1])
     }
 
+    /** The pointer sits under the open chat's head (or under "+" while the chat list shows). Positions come
+     *  from the layout, not the screen, so a head that is still popping in (scaled) does not throw it off. */
     private fun placePointer() {
         val chatId = AgentRuntime.chats()?.current()?.id
         val head = if (browsing) newChat else (0 until headList.childCount).map { headList.getChildAt(it) }.firstOrNull { it.tag == chatId } ?: return
-        val h = IntArray(2).also { head.getLocationOnScreen(it) }
-        val c = IntArray(2).also { column.getLocationOnScreen(it) }
-        pointer.animate().translationX((h[0] - c[0] + head.width / 2 - pointer.width / 2).toFloat()).setDuration(160).start()
+        if (head.width == 0) { // just added: place it once it has been laid out
+            head.post { if (isOpen) placePointer() }
+            return
+        }
+        var x = head.left + head.width / 2
+        var parent = head.parent as View
+        while (parent !== column) { // add up the offsets from the head up to the column the pointer lives in
+            x += parent.left
+            parent = parent.parent as View
+        }
+        val w = if (pointer.width > 0) pointer.width else dp(20)
+        pointer.animate().translationX((x - w / 2).toFloat()).setDuration(160).start()
     }
 
     private fun scrollToEnd() {
