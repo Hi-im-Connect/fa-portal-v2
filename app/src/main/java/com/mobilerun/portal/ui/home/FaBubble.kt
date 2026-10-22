@@ -258,8 +258,9 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
     }
 
     private fun measureOffset() {
-        val now = IntArray(2).also { bubble.getLocationOnScreen(it) }
-        offset = (now[0] - params.x) to (now[1] - params.y)
+        val onScreen = IntArray(2).also { bubble.getLocationOnScreen(it) }
+        val inWindow = IntArray(2).also { bubble.getLocationInWindow(it) }
+        offset = windowOffset(onScreen, inWindow, params.x, params.y)
     }
 
     // ---- what the chat needs from the bubble ---------------------------------------------------
@@ -583,3 +584,12 @@ class FaBubble private constructor(private val service: AccessibilityService) : 
         }
     }
 }
+
+/**
+ * Where the bubble's window really sits on screen, minus where we asked for it (status bar, cutout).
+ * Both locations include the view's own scale, so taking one from the other cancels it: measured
+ * mid pop-in (scale near 0) the screen location alone is half a bubble off, and the agent's
+ * "is this tap on Stop or Pause?" check then misses the buttons.
+ */
+internal fun windowOffset(onScreen: IntArray, inWindow: IntArray, x: Int, y: Int): Pair<Int, Int> =
+    (onScreen[0] - inWindow[0] - x) to (onScreen[1] - inWindow[1] - y)
